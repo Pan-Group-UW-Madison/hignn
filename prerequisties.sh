@@ -14,7 +14,7 @@ apt-get install libcudnn8-dev=8.5.0.*-1+cuda11.7
 pip install torch torchvision torchaudio
 
 # install kokkos
-cd ~/
+cd ~
 mkdir package
 cd package
 git clone https://github.com/kokkos/kokkos.git
@@ -23,11 +23,10 @@ export OMPI_CXX=./bin/nvcc_wrapper
 mkdir build
 cd build
 cmake -D CMAKE_INSTALL_PREFIX:PATH=~/kokkos/ -D Kokkos_ENABLE_OPENMP:BOOL=ON -D Kokkos_ENABLE_SERIAL:BOOL=OFF -D Kokkos_ENABLE_CUDA:BOOL=ON -D Kokkos_ENABLE_CUDA_UVM:BOOL=ON -D Kokkos_ENABLE_CUDA_LAMBDA:BOOL=ON -D Kokkos_ARCH_BDW:BOOL=ON -D Kokkos_ARCH_AMPERE86:BOOL=ON ../
-make -j
+make install -j
 
 # prepare hignn directory
-cd ~/
-mkdir hignn
+cd ~
 cd hignn
 
 git clone https://github.com/pybind/pybind11.git
