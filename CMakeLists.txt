@@ -8,7 +8,7 @@ find_package(PythonLibs 3.8 REQUIRED)
 find_package(Torch REQUIRED)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
-set(KOKKOS_PATH ${PROJECT_SOURCE_DIR}/../kokkos)
+set(Kokkos_DIR ${PROJECT_SOURCE_DIR}/../kokkos/lib/cmake/Kokkos)
 find_package(Kokkos REQUIRED)
 
 include_directories("${PROJECT_SOURCE_DIR}/")
