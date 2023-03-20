@@ -11,7 +11,7 @@ find_package(Python REQUIRED COMPONENTS Interpreter Development)
 set(Kokkos_DIR ${PROJECT_SOURCE_DIR}/../kokkos/lib/cmake/Kokkos)
 find_package(Kokkos REQUIRED)
 
-include_directories("${PROJECT_SOURCE_DIR}/")
+include_directories("${PROJECT_SOURCE_DIR}/include")
 include_directories("${PROJECT_SOURCE_DIR}/eigen/")
 include_directories("${PROJECT_SOURCE_DIR}/pybind11/include/")
 
