@@ -1,5 +1,7 @@
 #!/bin/bash
 
+sudo apt install clang-format
+
 # install cuda driver
 
 # install pytorch
