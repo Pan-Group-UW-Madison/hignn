@@ -1,37 +1,26 @@
-cmake_minimum_required(VERSION 3.9.0)
-project(hignn)
+cmake_minimum_required(VERSION 3.16)
+project(hignn LANGUAGES C CXX)
 
-set(CMAKE_BUILD_TYPE RELEASE)
-
-find_package(PythonInterp 3.8 REQUIRED)
-find_package(PythonLibs 3.8 REQUIRED)
+# find dependencies
+find_package(Kokkos REQUIRED)
 find_package(Torch REQUIRED)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
-set(Kokkos_DIR ${PROJECT_SOURCE_DIR}/../kokkos/lib/cmake/Kokkos)
-find_package(Kokkos REQUIRED)
+# targets
+file(GLOB SOURCES "src/*.cpp")
+add_executable(hignn ${SOURCES})
 
-include_directories("${PROJECT_SOURCE_DIR}/include")
-include_directories("${PROJECT_SOURCE_DIR}/eigen/")
-include_directories("${PROJECT_SOURCE_DIR}/pybind11/include/")
+target_compile_features(hignn PUBLIC cxx_std_17)
+set_target_properties(hignn PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_STANDARD_REQUIRED ON
+)
 
-set(CMAKE_CXX_STANDARD 17)
+add_compile_options(-O3 -w -fPIC -fopenmp -Wno-deprecated-gpu-targets)
 
-set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/build)
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/)
-
-add_compile_options(-O3 -w -DNDEBUG -fPIC)
-
-file(GLOB_RECURSE sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
-add_executable(hignn ${sources})
-set_target_properties(hignn PROPERTIES PREFIX "")
-
+# link/include
+target_compile_definitions(hignn PRIVATE -DCUSTOM_SYS_PATH="${PROJECT_SOURCE_DIR}/include")
 target_include_directories(hignn SYSTEM PRIVATE ${PYTHON_INCLUDE_DIRS})
-target_link_libraries(hignn PRIVATE "${TORCH_LIBRARIES}")
-target_link_libraries(hignn PRIVATE Python::Python)
+target_include_directories(hignn PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 target_link_libraries(hignn PRIVATE Kokkos::kokkos)
-target_compile_options(hignn PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
-    --ftz=false
-    --prec-div=true
-    --prec-sqrt=true
-    >)
+target_link_libraries(hignn PRIVATE "${TORCH_LIBRARIES}")
