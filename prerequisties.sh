@@ -24,7 +24,8 @@ cd kokkos
 export OMPI_CXX=./bin/nvcc_wrapper
 mkdir build
 cd build
-cmake -D CMAKE_INSTALL_PREFIX:PATH=~/kokkos/ -D Kokkos_ENABLE_OPENMP:BOOL=ON -D Kokkos_ENABLE_SERIAL:BOOL=OFF -D Kokkos_ENABLE_CUDA:BOOL=ON -D Kokkos_ENABLE_CUDA_UVM:BOOL=ON -D Kokkos_ENABLE_CUDA_LAMBDA:BOOL=ON -D Kokkos_ARCH_BDW:BOOL=ON -D Kokkos_ARCH_AMPERE86:BOOL=ON ../
+export CXX=~/kokkos/bin/nvcc_wrapper
+cmake -D CMAKE_INSTALL_PREFIX:PATH=~/kokkos/ -D Kokkos_ENABLE_OPENMP:BOOL=ON -D Kokkos_ENABLE_SERIAL:BOOL=OFF -D Kokkos_ENABLE_CUDA:BOOL=ON -D Kokkos_ENABLE_CUDA_LAMBDA:BOOL=ON -D Kokkos_ARCH_AMPERE86:BOOL=ON -D CMAKE_CXX_STANDARD=17 ../
 make install -j
 
 # prepare hignn directory

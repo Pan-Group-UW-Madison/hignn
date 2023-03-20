@@ -1,8 +1,11 @@
 if [ $1 == "rebuild" ]; then
+    make clean
+
     rm CMakeCache.txt
     rm -rf CMakeFiles/
 
-    cmake -DCMAKE_PREFIX_PATH=`python3 -c 'import torch;print(torch.utils.cmake_prefix_path)'` ./
+    export CXX=~/kokkos/bin/nvcc_wrapper
+    cmake -DCMAKE_PREFIX_PATH="`python3 -c 'import torch;print(torch.utils.cmake_prefix_path)'`;~/kokkos/" -DCMAKE_CXX_EXTENSIONS=Off ./
 fi
 
 cmake_result=$?
@@ -11,6 +14,10 @@ if [ $cmake_result -ne 0 ]; then
 else
     echo -e "${Green}cmake suceeds${NC}"
 fi
+
+export OMPI_CXX=~/kokkos/bin/nvcc_wrapper
+export NVCC_WRAPPER_DEFAULT_COMPILER=/usr/bin/g++
+export CUDA_LAUNCH_BLOCKING=1
 
 make hignn -j
 
