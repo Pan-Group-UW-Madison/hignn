@@ -1,14 +1,38 @@
 #include "hignn.hpp"
 
-void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+void Problem::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   if (mMPIRank == 0)
-    std::cout << "start of CloseDot" << std::endl;
+    std::cout << "start of PostCheckDot" << std::endl;
+
+  DeviceDoubleMatrix uPostCheck("uPostCheck", u.extent(0), u.extent(1));
+
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, u.extent(0)),
+      KOKKOS_LAMBDA(const int i) {
+        uPostCheck(i, 0) = 0.0;
+        uPostCheck(i, 1) = 0.0;
+        uPostCheck(i, 2) = 0.0;
+      });
+  Kokkos::fence();
 
   double queryDuration = 0;
   double dotDuration = 0;
 
-  const int leafNodeSize = mLeafNodePtr->extent(0);
-  const int maxWorkSize = std::min(100, leafNodeSize);
+  const std::size_t totalLeafNodeSize = mLeafNodeList.size();
+
+  std::size_t leafNodeStart = 0, leafNodeEnd;
+  for (int i = 0; i < mMPIRank; i++) {
+    std::size_t rankLeafNodeSize =
+        totalLeafNodeSize / mMPISize + (i < totalLeafNodeSize % mMPISize);
+    leafNodeStart += rankLeafNodeSize;
+  }
+  leafNodeEnd = leafNodeStart + totalLeafNodeSize / mMPISize +
+                (mMPIRank < totalLeafNodeSize % mMPISize);
+  leafNodeEnd = std::min(leafNodeEnd, totalLeafNodeSize);
+
+  const std::size_t leafNodeSize = leafNodeEnd - leafNodeStart;
+
+  const std::size_t maxWorkSize = std::min<std::size_t>(leafNodeSize, 100);
   int workSize = maxWorkSize;
 
   std::size_t totalNumQuery = 0;
@@ -23,21 +47,29 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   DeviceIntVector workingNodeOffset("workingNodeOffset", maxWorkSize);
   DeviceIntVector workingNodeCpy("workingNodeCpy", maxWorkSize);
   DeviceIntVector workingFlag("workingFlag", maxWorkSize);
+  DeviceIntVector workingNodeCol("workingNodeCol", maxWorkSize);
 
   DeviceIntVector relativeCoordSize("relativeCoordSize", maxWorkSize);
   DeviceIntVector relativeCoordOffset("relativeCoordOffset", maxWorkSize);
 
   DeviceIndexVector nodeOffset("nodeOffset", leafNodeSize);
 
-  auto &mCloseMatI = *mCloseMatIPtr;
-  auto &mCloseMatJ = *mCloseMatJPtr;
   auto &mCoord = *mCoordPtr;
   auto &mClusterTree = *mClusterTreePtr;
-  auto &mLeafNode = *mLeafNodePtr;
+
+  DeviceIntVector mLeafNode("mLeafNode", totalLeafNodeSize);
+
+  DeviceIntVector::HostMirror hostLeafNode =
+      Kokkos::create_mirror_view(mLeafNode);
+
+  for (int i = 0; i < totalLeafNodeSize; i++) {
+    hostLeafNode(i) = mLeafNodeList[i];
+  }
+  Kokkos::deep_copy(mLeafNode, hostLeafNode);
 
   Kokkos::parallel_for(
       Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, leafNodeSize),
-      KOKKOS_LAMBDA(const std::size_t i) { nodeOffset(i) = mCloseMatI(i); });
+      KOKKOS_LAMBDA(const std::size_t i) { nodeOffset(i) = 0; });
 
   Kokkos::parallel_for(
       Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
@@ -56,8 +88,8 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
           const int rank = i;
           const int node = workingNode(rank);
-          const int nodeI = mLeafNode(node);
-          const int nodeJ = mCloseMatJ(nodeOffset(node));
+          const int nodeI = mLeafNode(node + leafNodeStart);
+          const int nodeJ = mLeafNode(nodeOffset(node));
           const int relativeOffset = rank * blockSize * blockSize;
 
           const int indexIStart = mClusterTree(nodeI, 2);
@@ -95,8 +127,8 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 &teamMember) {
           const int rank = teamMember.league_rank();
           const int node = workingNode(rank);
-          const int nodeI = mLeafNode(node);
-          const int nodeJ = mCloseMatJ(nodeOffset(node));
+          const int nodeI = mLeafNode(node + leafNodeStart);
+          const int nodeJ = mLeafNode(nodeOffset(node));
           const int relativeOffset = relativeCoordOffset(rank);
 
           const int indexIStart = mClusterTree(nodeI, 2);
@@ -155,17 +187,17 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 &teamMember) {
           const int rank = teamMember.league_rank();
           const int node = workingNode(rank);
-          const std::size_t nodeI = mLeafNode(node);
-          const std::size_t nodeJ = mCloseMatJ(nodeOffset(node));
+          const int nodeI = mLeafNode(node + leafNodeStart);
+          const int nodeJ = mLeafNode(nodeOffset(node));
           const int relativeOffset = relativeCoordOffset(rank);
 
-          const std::size_t indexIStart = mClusterTree(nodeI, 2);
-          const std::size_t indexIEnd = mClusterTree(nodeI, 3);
-          const std::size_t indexJStart = mClusterTree(nodeJ, 2);
-          const std::size_t indexJEnd = mClusterTree(nodeJ, 3);
+          const int indexIStart = mClusterTree(nodeI, 2);
+          const int indexIEnd = mClusterTree(nodeI, 3);
+          const int indexJStart = mClusterTree(nodeJ, 2);
+          const int indexJEnd = mClusterTree(nodeJ, 3);
 
-          const std::size_t workSizeI = indexIEnd - indexIStart;
-          const std::size_t workSizeJ = indexJEnd - indexJStart;
+          const int workSizeI = indexIEnd - indexIStart;
+          const int workSizeJ = indexJEnd - indexJStart;
 
           Kokkos::parallel_for(
               Kokkos::TeamThreadRange(teamMember, workSizeI * workSizeJ),
@@ -178,7 +210,7 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                     sum +=
                         dataPtr[9 * (relativeOffset + index) + row * 3 + col] *
                         f(indexJStart + k, col);
-                  Kokkos::atomic_add(&u(indexIStart + j, row), sum);
+                  Kokkos::atomic_add(&uPostCheck(indexIStart + j, row), sum);
                 }
               });
         });
@@ -199,8 +231,7 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
         KOKKOS_LAMBDA(const int rank) {
           nodeOffset(workingNode(rank))++;
-          if (nodeOffset(workingNode(rank)) ==
-              mCloseMatI(workingNode(rank) + 1)) {
+          if (nodeOffset(workingNode(rank)) == totalLeafNodeSize) {
             workingNode(rank) += maxWorkSize;
           }
 
@@ -249,20 +280,108 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     }
   }
 
-  MPI_Allreduce(MPI_IN_PLACE, &totalNumQuery, 1, MPI_LONG, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, &totalNumIter, 1, MPI_LONG, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, &queryDuration, 1, MPI_DOUBLE, MPI_MAX,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, &dotDuration, 1, MPI_DOUBLE, MPI_MAX,
-                MPI_COMM_WORLD);
+  DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(uPostCheck);
+  Kokkos::deep_copy(hostU, uPostCheck);
+
+  MPI_Allreduce(MPI_IN_PLACE, hostU.data(), hostU.extent(0) * hostU.extent(1),
+                MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+  Kokkos::deep_copy(uPostCheck, hostU);
+
+  double uNorm, diffNorm;
+  Kokkos::parallel_reduce(
+      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, u.extent(0)),
+      KOKKOS_LAMBDA(const int i, double &tSum) {
+        tSum += uPostCheck(i, 0) * uPostCheck(i, 0) +
+                uPostCheck(i, 1) * uPostCheck(i, 1) +
+                uPostCheck(i, 2) * uPostCheck(i, 2);
+      },
+      Kokkos::Sum<double>(uNorm));
+  Kokkos::fence();
+
+  Kokkos::parallel_reduce(
+      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, u.extent(0)),
+      KOKKOS_LAMBDA(const int i, double &tSum) {
+        tSum += pow(u(i, 0) - uPostCheck(i, 0), 2) +
+                pow(u(i, 1) - uPostCheck(i, 1), 2) +
+                pow(u(i, 2) - uPostCheck(i, 2), 2);
+      },
+      Kokkos::Sum<double>(diffNorm));
+  Kokkos::fence();
 
   if (mMPIRank == 0) {
-    printf(
-        "num query: %ld, num iteration: %ld, query duration: %.4fs, dot "
-        "duration: %.4fs\n",
-        totalNumQuery, totalNumIter, queryDuration / 1e6, dotDuration / 1e6);
-    std::cout << "end of CloseDot" << std::endl;
+    std::cout << "query duration: " << queryDuration / 1e6 << "s" << std::endl;
+    std::cout << "dot product duration: " << dotDuration / 1e6 << "s"
+              << std::endl;
+    std::cout << "post check result: " << sqrt(diffNorm / uNorm) << std::endl;
   }
+
+  // DeviceDoubleMatrix::HostMirror uHost = Kokkos::create_mirror_view(u);
+  // Kokkos::deep_copy(uHost, u);
+  // DeviceDoubleMatrix::HostMirror uPostCheckHost =
+  //     Kokkos::create_mirror_view(uPostCheck);
+  // Kokkos::deep_copy(uPostCheckHost, uPostCheck);
+  // DeviceFloatMatrix::HostMirror coords = Kokkos::create_mirror_view(mCoord);
+  // Kokkos::deep_copy(coords, mCoord);
+
+  // std::ofstream vtkStream;
+  // vtkStream.open("output.vtk", std::ios::out | std::ios::trunc);
+
+  // vtkStream << "# vtk DataFile Version 2.0" << std::endl;
+
+  // vtkStream << "output " << std::endl;
+
+  // vtkStream << "ASCII" << std::endl << std::endl;
+
+  // const int NN = uPostCheckHost.extent(0);
+
+  // vtkStream << "DATASET POLYDATA" << std::endl
+  //           << "POINTS " << NN << " float" << std::endl;
+
+  // for (int i = 0; i < NN; i++) {
+  //   for (int j = 0; j < 3; j++)
+  //     vtkStream << coords(i, j) << " ";
+  //   vtkStream << std::endl;
+  // }
+
+  // vtkStream << "POINT_DATA " << NN << std::endl;
+
+  // vtkStream << "SCALARS u float 3" << std::endl
+  //           << "LOOKUP_TABLE default" << std::endl;
+
+  // for (int i = 0; i < NN; i++) {
+  //   vtkStream << uHost(i, 0) << " " << uHost(i, 1) << " " << uHost(i, 2)
+  //             << std::endl;
+  // }
+
+  // vtkStream.close();
+
+  // vtkStream.open("output-check.vtk", std::ios::out | std::ios::trunc);
+
+  // vtkStream << "# vtk DataFile Version 2.0" << std::endl;
+
+  // vtkStream << "output " << std::endl;
+
+  // vtkStream << "ASCII" << std::endl << std::endl;
+
+  // vtkStream << "DATASET POLYDATA" << std::endl
+  //           << "POINTS " << NN << " float" << std::endl;
+
+  // for (int i = 0; i < NN; i++) {
+  //   for (int j = 0; j < 3; j++)
+  //     vtkStream << coords(i, j) << " ";
+  //   vtkStream << std::endl;
+  // }
+
+  // vtkStream << "POINT_DATA " << NN << std::endl;
+
+  // vtkStream << "SCALARS u float 3" << std::endl
+  //           << "LOOKUP_TABLE default" << std::endl;
+
+  // for (int i = 0; i < NN; i++) {
+  //   vtkStream << uPostCheckHost(i, 0) << " " << uPostCheckHost(i, 1) << " "
+  //             << uPostCheckHost(i, 2) << std::endl;
+  // }
+
+  // vtkStream.close();
 }

@@ -33,24 +33,18 @@ struct reduction_identity<ArrReduce> {
 };
 }  // namespace Kokkos
 
-void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+void Problem::PostCheck() {
   if (mMPIRank == 0)
     std::cout << "start of FarDot" << std::endl;
-
-  double queryDuration = 0.0;
-  double dotDuration = 0.0;
-  double ckNormalizationDuration = 0.0;
-  double qkNormalizationDuration = 0.0;
-  double stopCriterionDuration = 0.0;
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
   int innerNumIter = 0;
   int maxInnerNumIter = 0;
 
-  const int maxRelativeCoord = 300000;
-  const int matPoolSize = maxRelativeCoord * 40;
-  const int maxWorkNodeSize = 5000;
+  const int maxRelativeCoord = 100000;
+  const int matPoolSize = maxRelativeCoord * 100;
+  const int maxWorkNodeSize = 1000;
   const int maxIter = 100;
   const int middleMatPoolSize = maxWorkNodeSize * maxIter;
   int workNodeSize = 0;
@@ -63,7 +57,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                                       maxRelativeCoord * 3);
   DeviceDoubleMatrix cMatPool("cMatPool", matPoolSize, 9);
   DeviceDoubleMatrix qMatPool("qMatPool", matPoolSize, 9);
-  DeviceDoubleVector middleMatPool("middleMatPool", middleMatPoolSize * 3);
+  DeviceDoubleMatrix middleMatPool("middleMatPool", 300, 300);
   DeviceDoubleMatrix ckMatPool("ckMatPool", maxRelativeCoord, 9);
   DeviceDoubleMatrix ckInvMatPool("ckInvMatPool", maxWorkNodeSize, 9);
 
@@ -249,16 +243,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      std::chrono::steady_clock::time_point begin =
-          std::chrono::steady_clock::now();
-
       auto resultTensor = module.forward(inputs).toTensor();
-
-      std::chrono::steady_clock::time_point end =
-          std::chrono::steady_clock::now();
-      queryDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
 
       // copy result to CMat
       auto dataPtr = resultTensor.data_ptr<float>();
@@ -286,7 +271,6 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
     // find index for QMat
     {
-      auto begin = std::chrono::steady_clock::now();
       Kokkos::parallel_for(
           Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
                                                             Kokkos::AUTO()),
@@ -439,11 +423,6 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 });
           });
       Kokkos::fence();
-
-      auto end = std::chrono::steady_clock::now();
-      ckNormalizationDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
     }
 
     {
@@ -519,16 +498,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      std::chrono::steady_clock::time_point begin =
-          std::chrono::steady_clock::now();
-
       auto resultTensor = module.forward(inputs).toTensor();
-
-      std::chrono::steady_clock::time_point end =
-          std::chrono::steady_clock::now();
-      queryDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
 
       // copy result to QMat
       auto dataPtr = resultTensor.data_ptr<float>();
@@ -556,7 +526,6 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
     // find index for CMat
     {
-      auto begin = std::chrono::steady_clock::now();
       Kokkos::parallel_for(
           Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
                                                             Kokkos::AUTO()),
@@ -645,17 +614,10 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 result.loc;
           });
       Kokkos::fence();
-
-      auto end = std::chrono::steady_clock::now();
-      qkNormalizationDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
     }
 
     // stop criterion
     {
-      auto start = std::chrono::steady_clock::now();
-
       Kokkos::parallel_for(
           Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
                                                             Kokkos::AUTO()),
@@ -818,11 +780,6 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             }
           });
       Kokkos::fence();
-
-      auto end = std::chrono::steady_clock::now();
-      stopCriterionDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - start)
-              .count();
     }
 
     int newWorkNodeSize = 0;
@@ -837,8 +794,6 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
     // dot product
     {
-      auto start = std::chrono::steady_clock::now();
-
       const int dotSize = workNodeSize - newWorkNodeSize;
       Kokkos::parallel_for(
           Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
@@ -856,87 +811,6 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             }
           });
       Kokkos::fence();
-
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
-              0, innerNumIter * dotSize * 3),
-          KOKKOS_LAMBDA(const int i) { middleMatPool(i) = 0.0; });
-      Kokkos::fence();
-
-      Kokkos::parallel_for(
-          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
-                                                            Kokkos::AUTO()),
-          KOKKOS_LAMBDA(
-              const Kokkos::TeamPolicy<
-                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-            const int rank = teamMember.league_rank();
-            const int workingNodeRank = dotProductRank(rank);
-
-            const int nodeJ = mFarMatJ(workingNode(workingNodeRank));
-            const int indexJStart = mClusterTree(nodeJ, 2);
-            const int indexJEnd = mClusterTree(nodeJ, 3);
-            const int workSizeJ = indexJEnd - indexJStart;
-
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
-                [&](const int i) {
-                  const int iter = i / 3;
-                  const int row = i % 3;
-
-                  const int qkOffset =
-                      workingNodeQMatOffset(workingNodeRank, iter);
-                  const int middleMatOffset = 3 * innerNumIter * rank;
-
-                  double sum = 0.0;
-                  for (int j = 0; j < workSizeJ; j++)
-                    for (int k = 0; k < 3; k++)
-                      sum += qMatPool(qkOffset + j, row * 3 + k) *
-                             f(indexJStart + j, k);
-                  middleMatPool(middleMatOffset + i) = sum;
-                });
-          });
-      Kokkos::fence();
-
-      Kokkos::parallel_for(
-          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
-                                                            Kokkos::AUTO()),
-          KOKKOS_LAMBDA(
-              const Kokkos::TeamPolicy<
-                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-            const int rank = teamMember.league_rank();
-            const int workingNodeRank = dotProductRank(rank);
-
-            const int nodeI = mFarMatI(dotProductNode(rank));
-            const int indexIStart = mClusterTree(nodeI, 2);
-            const int indexIEnd = mClusterTree(nodeI, 3);
-            const int workSizeI = indexIEnd - indexIStart;
-
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember,
-                                        workSizeI * innerNumIter * 3),
-                [&](const int i) {
-                  const int index = i / (3 * innerNumIter);
-                  const int row = (i % (3 * innerNumIter)) / innerNumIter;
-                  const int iter = (i % (3 * innerNumIter)) % innerNumIter;
-
-                  double sum = 0.0;
-                  const int cMatOffset =
-                      workingNodeCMatOffset(workingNodeRank, iter);
-                  const int middleMatOffset = 3 * innerNumIter * rank;
-
-                  for (int k = 0; k < 3; k++)
-                    sum += cMatPool(cMatOffset + index, row * 3 + k) *
-                           middleMatPool(middleMatOffset + 3 * iter + k);
-
-                  Kokkos::atomic_add(&u(indexIStart + index, row), sum);
-                });
-          });
-      Kokkos::fence();
-
-      auto end = std::chrono::steady_clock::now();
-      dotDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - start)
-              .count();
     }
 
     // reset working node
@@ -1097,25 +971,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     }
   }
 
-  MPI_Allreduce(MPI_IN_PLACE, &totalNumQuery, 1, MPI_UNSIGNED_LONG, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, &totalNumIter, 1, MPI_UNSIGNED_LONG, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, &maxInnerNumIter, 1, MPI_INT, MPI_MAX,
-                MPI_COMM_WORLD);
-
   if (mMPIRank == 0) {
-    printf(
-        "num query: %ld, num iteration: %ld, query duration: %.4fs, dot "
-        "duration: %.4fs\n",
-        totalNumQuery, totalNumIter, queryDuration / 1e6, dotDuration / 1e6);
-    printf(
-        "ck normalization duration: %.4fs, qk normalization duration: %.4fs, "
-        "stop criterion duration: %.4fs\n",
-        ckNormalizationDuration / 1e6, qkNormalizationDuration / 1e6,
-        stopCriterionDuration / 1e6);
-    printf("max inner num iter: %d\n", maxInnerNumIter);
-
-    std::cout << "end of FarDot" << std::endl;
+    std::cout << "end of PostCheck" << std::endl;
   }
 }

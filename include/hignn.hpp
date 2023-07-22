@@ -6,7 +6,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <execution>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -22,6 +21,8 @@ using namespace std::chrono;
 #include <Eigen/Core>
 #include <Eigen/LU>
 #include <Eigen/SVD>
+
+#include <mpi.h>
 
 #include "Typedef.hpp"
 
@@ -41,18 +42,28 @@ protected:
 
   std::shared_ptr<DeviceIndexVector> mLeafNodePtr;
 
+  std::vector<std::size_t> mLeafNodeList;
+
   std::vector<std::size_t> mReorderedMap;
 
   int mBlockSize;
   int mDim;
 
+  int mMPIRank;
+  int mMPISize;
+
   std::size_t clusterTreeSize;
   torch::jit::script::Module module;
 
-protected:
-  std::size_t GetCount() { return mCoordPtr->extent(0); }
+  std::string mDeviceString;
 
-  void ComputeAux(const std::size_t first, const std::size_t last,
+protected:
+  std::size_t GetCount() {
+    return mCoordPtr->extent(0);
+  }
+
+  void ComputeAux(const std::size_t first,
+                  const std::size_t last,
                   std::vector<float> &aux) {
     auto &mVertexMirror = *mCoordMirrorPtr;
 
@@ -71,22 +82,13 @@ protected:
       }
   }
 
-  std::size_t Divide(const std::size_t first, const std::size_t last,
-                     const int axis, std::vector<std::size_t> &reorderedMap) {
+  std::size_t Divide(const std::size_t first,
+                     const std::size_t last,
+                     const int axis,
+                     std::vector<std::size_t> &reorderedMap) {
     auto &mVertexMirror = *mCoordMirrorPtr;
 
     const std::size_t L = last - first;
-
-    // double mean = 0.0;
-    // std::vector<double> temp(L);
-
-    // for (auto i = first; i < last; i++)
-    //   mean += mVertexMirror(reorderedMap[i], axis);
-
-    // mean /= (double)L;
-
-    // for (auto i = 0; i < L; i++)
-    //   temp[i] = mVertexMirror(reorderedMap[i + first], axis) - mean;
 
     std::vector<float> mean(mDim, 0.0);
     std::vector<float> temp(L);
@@ -169,15 +171,19 @@ public:
     mBlockSize = blockSize;
     mDim = 3;
 
+    MPI_Comm_rank(MPI_COMM_WORLD, &mMPIRank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mMPISize);
+
     // load script module
     module = torch::jit::load("3D_force_UB_max600_try2.pt");
-    module.to(at::kCUDA);
+    mDeviceString = "cuda:" + std::to_string(mMPIRank);
+    module.to(mDeviceString);
 
     auto options = torch::TensorOptions()
                        .dtype(torch::kFloat32)
-                       .device(torch::kCUDA, 0)
+                       .device(torch::kCUDA, mMPIRank)
                        .requires_grad(false);
-    torch::Tensor testTensor = torch::ones({500000, 3}, options);
+    torch::Tensor testTensor = torch::ones({50000, 3}, options);
     std::vector<c10::IValue> inputs;
     inputs.push_back(testTensor);
 
@@ -191,10 +197,12 @@ public:
   }
 
   void Build() {
+    MPI_Barrier(MPI_COMM_WORLD);
     std::chrono::high_resolution_clock::time_point t1 =
         std::chrono::high_resolution_clock::now();
 
-    std::cout << "start of Build" << std::endl;
+    if (mMPIRank == 0)
+      std::cout << "start of Build" << std::endl;
 
     Kokkos::deep_copy(*mCoordMirrorPtr, *mCoordPtr);
 
@@ -287,15 +295,19 @@ public:
     std::chrono::high_resolution_clock::time_point t2 =
         std::chrono::high_resolution_clock::now();
 
+    MPI_Barrier(MPI_COMM_WORLD);
     auto duration =
         std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
 
-    std::cout << "Build time: " << (double)duration / 1e6 << "s" << std::endl;
+    if (mMPIRank == 0) {
+      std::cout << "Build time: " << (double)duration / 1e6 << "s" << std::endl;
 
-    std::cout << "end of Build" << std::endl;
+      std::cout << "end of Build" << std::endl;
+    }
   }
 
-  inline bool CloseFarCheck(HostFloatMatrix aux, const std::size_t node1,
+  inline bool CloseFarCheck(HostFloatMatrix aux,
+                            const std::size_t node1,
                             const std::size_t node2) {
     float diam0 = 0.0;
     float diam1 = 0.0;
@@ -335,7 +347,8 @@ public:
     std::chrono::high_resolution_clock::time_point t1 =
         std::chrono::high_resolution_clock::now();
 
-    std::cout << "start of CloseFarCheck" << std::endl;
+    if (mMPIRank == 0)
+      std::cout << "start of CloseFarCheck" << std::endl;
 
     auto &mClusterTree = *mClusterTreeMirrorPtr;
 
@@ -390,8 +403,6 @@ public:
     }
 
     // estimate far and close pair size based on aux.
-    std::vector<std::size_t> leafNode;
-
     // close far check
     std::vector<std::vector<int>> farMat(mClusterTree.extent(0));
     std::vector<std::vector<int>> closeMat(mClusterTree.extent(0));
@@ -411,9 +422,10 @@ public:
           if (isFar) {
             farMat[i].push_back(closeMat[i][j]);
 
-            int nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
-            int nodeSizeJ = mClusterTree(closeMat[i][j], 3) -
-                            mClusterTree(closeMat[i][j], 2);
+            std::size_t nodeSizeI =
+                mClusterTree(node, 3) - mClusterTree(node, 2);
+            std::size_t nodeSizeJ = mClusterTree(closeMat[i][j], 3) -
+                                    mClusterTree(closeMat[i][j], 2);
 
             total_entry += nodeSizeI * nodeSizeJ;
           } else {
@@ -433,8 +445,8 @@ public:
         for (int j = 0; j < closeMat[i].size(); j++) {
           bool isFar = CloseFarCheck(mAux, node, closeMat[i][j]);
 
-          int nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
-          int nodeSizeJ =
+          std::size_t nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
+          std::size_t nodeSizeJ =
               mClusterTree(closeMat[i][j], 3) - mClusterTree(closeMat[i][j], 2);
 
           total_entry += nodeSizeI * nodeSizeJ;
@@ -470,54 +482,114 @@ public:
 
         closeMat[i] = newCloseMat;
 
-        leafNode.push_back(node);
+        mLeafNodeList.push_back(node);
       }
     }
 
-    std::cout << "total entry: " << total_entry << std::endl;
+    if (mMPIRank == 0) {
+      std::cout << "total entry: " << total_entry << std::endl;
 
-    std::cout << "num of leaf nodes: " << leafNode.size() << std::endl;
+      std::cout << "num of leaf nodes: " << mLeafNodeList.size() << std::endl;
+    }
+
+    // split leaf node among mpi ranks
+    std::size_t leafNodeStart, leafNodeStartI, leafNodeStartJ;
+    std::size_t leafNodeEnd, leafNodeEndI, leafNodeEndJ;
+
+    std::size_t totalCloseMatSize = 0;
+    for (int i = 0; i < mLeafNodeList.size(); i++)
+      totalCloseMatSize += closeMat[mLeafNodeList[i]].size();
+
+    std::size_t estimatedLeafNodeSize =
+        std::ceil((double)totalCloseMatSize / mMPISize);
+    leafNodeStart = estimatedLeafNodeSize * mMPIRank;
+    leafNodeEnd =
+        std::min(estimatedLeafNodeSize * (mMPIRank + 1), totalCloseMatSize);
+
+    int counter = 0;
+    for (int i = 0; i < mLeafNodeList.size(); i++) {
+      counter += closeMat[mLeafNodeList[i]].size();
+      if (leafNodeStart <= counter) {
+        leafNodeStartI = i;
+        leafNodeStartJ =
+            leafNodeStart - (counter - closeMat[mLeafNodeList[i]].size());
+        break;
+      }
+    }
+
+    counter = 0;
+    for (int i = 0; i < mLeafNodeList.size(); i++) {
+      counter += closeMat[mLeafNodeList[i]].size();
+      if (leafNodeEnd <= counter) {
+        leafNodeEndI = i;
+        leafNodeEndJ =
+            leafNodeEnd - (counter - closeMat[mLeafNodeList[i]].size());
+        break;
+      }
+    }
+    std::size_t leafNodeSize = leafNodeEndI - leafNodeStartI + 1;
 
     mLeafNodePtr = std::make_shared<DeviceIndexVector>();
-    Kokkos::resize(*mLeafNodePtr, leafNode.size());
+    Kokkos::resize(*mLeafNodePtr, leafNodeSize);
 
     DeviceIndexVector::HostMirror hostLeafNode =
         Kokkos::create_mirror_view(*mLeafNodePtr);
 
     auto &mLeafNode = *mLeafNodePtr;
 
-    for (int i = 0; i < leafNode.size(); i++)
-      hostLeafNode(i) = leafNode[i];
+    for (int i = 0; i < leafNodeSize; i++)
+      hostLeafNode(i) = mLeafNodeList[i + leafNodeStartI];
     Kokkos::deep_copy(mLeafNode, hostLeafNode);
 
     mCloseMatIPtr = std::make_shared<DeviceIndexVector>();
     auto &mCloseMatI = *mCloseMatIPtr;
-    Kokkos::resize(*mCloseMatIPtr, leafNode.size() + 1);
+    Kokkos::resize(*mCloseMatIPtr, leafNodeSize + 1);
 
     DeviceIndexVector::HostMirror hostCloseMatI =
         Kokkos::create_mirror_view(*mCloseMatIPtr);
     hostCloseMatI(0) = 0;
-    for (int i = 0; i < leafNode.size(); i++)
-      hostCloseMatI(i + 1) = hostCloseMatI(i) + closeMat[leafNode[i]].size();
+    for (int i = 0; i < leafNodeSize; i++) {
+      if (i == 0)
+        hostCloseMatI(i + 1) =
+            closeMat[mLeafNodeList[i + leafNodeStartI]].size() - leafNodeStartJ;
+      else if (i == leafNodeSize - 1)
+        hostCloseMatI(i + 1) = hostCloseMatI(i) + leafNodeEndJ;
+      else
+        hostCloseMatI(i + 1) =
+            hostCloseMatI(i) +
+            closeMat[mLeafNodeList[i + leafNodeStartI]].size();
+    }
 
     mCloseMatJPtr = std::make_shared<DeviceIndexVector>();
     auto &mCloseMatJ = *mCloseMatJPtr;
-    Kokkos::resize(*mCloseMatJPtr, hostCloseMatI(leafNode.size()));
+    Kokkos::resize(*mCloseMatJPtr, hostCloseMatI(leafNodeSize));
 
     DeviceIndexVector::HostMirror hostCloseMatJ =
         Kokkos::create_mirror_view(*mCloseMatJPtr);
-    for (int i = 0; i < leafNode.size(); i++) {
-      for (int j = 0; j < closeMat[leafNode[i]].size(); j++) {
-        hostCloseMatJ(hostCloseMatI(i) + j) = closeMat[leafNode[i]][j];
-      }
+    for (int i = 0; i < leafNodeSize; i++) {
+      if (i == 0)
+        for (int j = leafNodeStartJ;
+             j < closeMat[mLeafNodeList[i + leafNodeStartI]].size(); j++)
+          hostCloseMatJ(hostCloseMatI(i) + j - leafNodeStartJ) =
+              closeMat[mLeafNodeList[i + leafNodeStartI]][j];
+      else if (i == leafNodeSize - 1)
+        for (int j = 0; j < leafNodeEndJ; j++)
+          hostCloseMatJ(hostCloseMatI(i) + j) =
+              closeMat[mLeafNodeList[i + leafNodeStartI]][j];
+      else
+        for (int j = 0; j < closeMat[mLeafNodeList[i + leafNodeStartI]].size();
+             j++)
+          hostCloseMatJ(hostCloseMatI(i) + j) =
+              closeMat[mLeafNodeList[i + leafNodeStartI]][j];
     }
 
-    std::cout << "Total close pair: " << hostCloseMatI(leafNode.size())
-              << std::endl;
+    if (mMPIRank == 0)
+      std::cout << "Total close pair: " << hostCloseMatI(mLeafNodeList.size())
+                << std::endl;
 
     std::size_t totalCloseEntry = 0;
-    for (int i = 0; i < leafNode.size(); i++) {
-      int nodeI = leafNode[i];
+    for (int i = 0; i < mLeafNodeList.size(); i++) {
+      int nodeI = mLeafNodeList[i];
       int nodeSizeI = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
       for (int j = 0; j < closeMat[nodeI].size(); j++) {
         int nodeJ = closeMat[nodeI][j];
@@ -527,7 +599,8 @@ public:
       }
     }
 
-    std::cout << "Total close entry: " << totalCloseEntry << std::endl;
+    if (mMPIRank == 0)
+      std::cout << "Total close entry: " << totalCloseEntry << std::endl;
 
     Kokkos::deep_copy(mCloseMatI, hostCloseMatI);
     Kokkos::deep_copy(mCloseMatJ, hostCloseMatJ);
@@ -540,27 +613,37 @@ public:
         totalFarNode++;
       }
     }
-    std::cout << "Total far node: " << totalFarNode << std::endl;
-    std::cout << "Total far pair: " << totalFarSize << std::endl;
+    if (mMPIRank == 0) {
+      std::cout << "Total far node: " << totalFarNode << std::endl;
+      std::cout << "Total far pair: " << totalFarSize << std::endl;
+    }
+
+    // split far pair among mpi ranks
+    std::size_t farMatSize = totalFarSize / (std::size_t)mMPISize;
+    farMatSize += ((totalFarSize % (std::size_t)mMPISize) > mMPIRank) ? 1 : 0;
 
     mFarMatIPtr = std::make_shared<DeviceIndexVector>();
     auto &mFarMatI = *mFarMatIPtr;
-    Kokkos::resize(*mFarMatIPtr, totalFarSize);
+    Kokkos::resize(*mFarMatIPtr, farMatSize);
 
     mFarMatJPtr = std::make_shared<DeviceIndexVector>();
     auto &mFarMatJ = *mFarMatJPtr;
-    Kokkos::resize(*mFarMatJPtr, totalFarSize);
+    Kokkos::resize(*mFarMatJPtr, farMatSize);
 
     DeviceIndexVector::HostMirror farMatIMirror =
         Kokkos::create_mirror_view(mFarMatI);
     DeviceIndexVector::HostMirror farMatJMirror =
         Kokkos::create_mirror_view(mFarMatJ);
 
-    int counter = 0;
+    counter = 0;
+    int matCounter = 0;
     for (int i = 0; i < farMat.size(); i++) {
       for (int j = 0; j < farMat[i].size(); j++) {
-        farMatIMirror(counter) = i;
-        farMatJMirror(counter) = farMat[i][j];
+        if (counter % mMPISize == mMPIRank) {
+          farMatIMirror(matCounter) = i;
+          farMatJMirror(matCounter) = farMat[i][j];
+          matCounter++;
+        }
         counter++;
       }
     }
@@ -573,7 +656,10 @@ public:
           mClusterTree(farMatJMirror(i), 3) - mClusterTree(farMatJMirror(i), 2);
       farDotQueryNum += nodeISize * nodeJSize;
     }
-    std::cout << "Total far entry: " << farDotQueryNum << std::endl;
+    MPI_Allreduce(MPI_IN_PLACE, &farDotQueryNum, 1, MPI_UNSIGNED_LONG, MPI_SUM,
+                  MPI_COMM_WORLD);
+    if (mMPIRank == 0)
+      std::cout << "Total far entry: " << farDotQueryNum << std::endl;
 
     Kokkos::deep_copy(mFarMatI, farMatIMirror);
     Kokkos::deep_copy(mFarMatJ, farMatJMirror);
@@ -582,879 +668,24 @@ public:
         std::chrono::high_resolution_clock::now();
     auto duration =
         std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-    std::cout << "Time for building close and far matrix: "
-              << (double)duration / 1e6 << "s" << std::endl;
-
-    std::cout << "end of CloseDot" << std::endl;
-  }
-
-  void CloseDot(DeviceFloatMatrix u, DeviceFloatMatrix f) {
-    std::cout << "start of CloseDot" << std::endl;
-
-    double queryDuration = 0;
-    double dotDuration = 0;
-
-    const int leafNodeSize = mLeafNodePtr->extent(0);
-    const int maxWorkSize = std::min(100, leafNodeSize);
-    int workSize = maxWorkSize;
-
-    std::size_t totalNumQuery = 0;
-    std::size_t totalNumIter = 0;
-
-    DeviceFloatMatrix relativeCoordPool(
-        "relativeCoordPool", maxWorkSize * mBlockSize * mBlockSize, 3);
-    DeviceFloatMatrix queryResultPool("queryResultPool",
-                                      maxWorkSize * mBlockSize * mBlockSize, 3);
-
-    DeviceIntVector workingNode("workingNode", maxWorkSize);
-    DeviceIntVector workingNodeOffset("workingNodeOffset", maxWorkSize);
-    DeviceIntVector workingNodeCpy("workingNodeCpy", maxWorkSize);
-    DeviceIntVector workingFlag("workingFlag", maxWorkSize);
-
-    DeviceIntVector relativeCoordSize("relativeCoordSize", maxWorkSize);
-    DeviceIntVector relativeCoordOffset("relativeCoordOffset", maxWorkSize);
-
-    DeviceIndexVector nodeOffset("nodeOffset", leafNodeSize);
-
-    auto &mCloseMatI = *mCloseMatIPtr;
-    auto &mCloseMatJ = *mCloseMatJPtr;
-    auto &mCoord = *mCoordPtr;
-    auto &mClusterTree = *mClusterTreePtr;
-    auto &mLeafNode = *mLeafNodePtr;
-
-    Kokkos::parallel_for(
-        Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, leafNodeSize),
-        KOKKOS_LAMBDA(const std::size_t i) { nodeOffset(i) = mCloseMatI(i); });
-
-    Kokkos::parallel_for(
-        Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-        KOKKOS_LAMBDA(const std::size_t i) {
-          workingNode(i) = i;
-          workingFlag(i) = 1;
-        });
-
-    const int blockSize = mBlockSize;
-    int workingFlagSum = workSize;
-    while (workSize > 0) {
-      totalNumIter++;
-      int totalCoord = 0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-            const int rank = i;
-            const int node = workingNode(rank);
-            const int nodeI = mLeafNode(node);
-            const int nodeJ = mCloseMatJ(nodeOffset(node));
-            const int relativeOffset = rank * blockSize * blockSize;
-
-            const int indexIStart = mClusterTree(nodeI, 2);
-            const int indexIEnd = mClusterTree(nodeI, 3);
-            const int indexJStart = mClusterTree(nodeJ, 2);
-            const int indexJEnd = mClusterTree(nodeJ, 3);
-
-            const int workSizeI = indexIEnd - indexIStart;
-            const int workSizeJ = indexJEnd - indexJStart;
-
-            relativeCoordSize(rank) = workSizeI * workSizeJ;
-
-            tSum += workSizeI * workSizeJ;
-          },
-          Kokkos::Sum<int>(totalCoord));
-      Kokkos::fence();
-
-      totalNumQuery += totalCoord;
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const int rank) {
-            relativeCoordOffset(rank) = 0;
-            for (int i = 0; i < rank; i++) {
-              relativeCoordOffset(rank) += relativeCoordSize(i);
-            }
-          });
-      Kokkos::fence();
-
-      // calculate the relative coordinates
-      Kokkos::parallel_for(
-          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workSize,
-                                                            Kokkos::AUTO()),
-          KOKKOS_LAMBDA(
-              const Kokkos::TeamPolicy<
-                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-            const int rank = teamMember.league_rank();
-            const int node = workingNode(rank);
-            const int nodeI = mLeafNode(node);
-            const int nodeJ = mCloseMatJ(nodeOffset(node));
-            const int relativeOffset = relativeCoordOffset(rank);
-
-            const int indexIStart = mClusterTree(nodeI, 2);
-            const int indexIEnd = mClusterTree(nodeI, 3);
-            const int indexJStart = mClusterTree(nodeJ, 2);
-            const int indexJEnd = mClusterTree(nodeJ, 3);
-
-            const int workSizeI = indexIEnd - indexIStart;
-            const int workSizeJ = indexJEnd - indexJStart;
-
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember, workSizeI),
-                [&](const int j) {
-                  Kokkos::parallel_for(
-                      Kokkos::ThreadVectorRange(teamMember, workSizeJ),
-                      [&](const int k) {
-                        const int index = relativeOffset + j * workSizeJ + k;
-                        for (int l = 0; l < 3; l++) {
-                          relativeCoordPool(index, l) =
-                              mCoord(indexJStart + k, l) -
-                              mCoord(indexIStart + j, l);
-                        }
-                      });
-                });
-          });
-      Kokkos::fence();
-
-      // do inference
-      auto options = torch::TensorOptions()
-                         .dtype(torch::kFloat32)
-                         .device(torch::kCUDA, 0)
-                         .requires_grad(false);
-      torch::Tensor relativeCoordTensor =
-          torch::from_blob(relativeCoordPool.data(), {totalCoord, 3}, options);
-      std::vector<c10::IValue> inputs;
-      inputs.push_back(relativeCoordTensor);
-
-      std::chrono::steady_clock::time_point begin =
-          std::chrono::steady_clock::now();
-
-      auto resultTensor = module.forward(inputs).toTensor();
-
-      std::chrono::steady_clock::time_point end =
-          std::chrono::steady_clock::now();
-      queryDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
-
-      begin = std::chrono::steady_clock::now();
-
-      auto dataPtr = resultTensor.data_ptr<float>();
-
-      Kokkos::parallel_for(
-          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workSize,
-                                                            Kokkos::AUTO()),
-          KOKKOS_LAMBDA(
-              const Kokkos::TeamPolicy<
-                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-            const int rank = teamMember.league_rank();
-            const int node = workingNode(rank);
-            const int nodeI = mLeafNode(node);
-            const int nodeJ = mCloseMatJ(nodeOffset(node));
-            const int relativeOffset = relativeCoordOffset(rank);
-
-            const int indexIStart = mClusterTree(nodeI, 2);
-            const int indexIEnd = mClusterTree(nodeI, 3);
-            const int indexJStart = mClusterTree(nodeJ, 2);
-            const int indexJEnd = mClusterTree(nodeJ, 3);
-
-            const int workSizeI = indexIEnd - indexIStart;
-            const int workSizeJ = indexJEnd - indexJStart;
-
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember, workSizeI),
-                [&](const int j) {
-                  Kokkos::parallel_for(
-                      Kokkos::ThreadVectorRange(teamMember, workSizeJ),
-                      [&](const int k) {
-                        int index = relativeOffset + j * workSizeJ + k;
-                        // there is an exception here
-                        // calculate r
-                        float r = 0;
-                        for (int l = 0; l < 3; l++) {
-                          r += relativeCoordPool(index, l) *
-                               relativeCoordPool(index, l);
-                        }
-                        r = sqrt(r);
-                        if (r < 1e-6) {
-                          dataPtr[9 * index] = 1.0;
-                          dataPtr[9 * index + 1] = 0.0;
-                          dataPtr[9 * index + 2] = 0.0;
-                          dataPtr[9 * index + 3] = 0.0;
-                          dataPtr[9 * index + 4] = 1.0;
-                          dataPtr[9 * index + 5] = 0.0;
-                          dataPtr[9 * index + 6] = 0.0;
-                          dataPtr[9 * index + 7] = 0.0;
-                          dataPtr[9 * index + 8] = 1.0;
-                        }
-                        for (int row = 0; row < 3; row++)
-                          for (int col = 0; col < 3; col++)
-                            u(indexIStart + j, row) +=
-                                dataPtr[9 * index + row * 3 + col] *
-                                f(indexJStart + j, col);
-                      });
-                });
-          });
-      Kokkos::fence();
-
-      end = std::chrono::steady_clock::now();
-      dotDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
-
-      // post processing
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const int rank) { workingFlag(rank) = 1; });
-      Kokkos::fence();
-
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const int rank) {
-            nodeOffset(workingNode(rank))++;
-            if (nodeOffset(workingNode(rank)) ==
-                mCloseMatI(workingNode(rank) + 1)) {
-              workingNode(rank) += maxWorkSize;
-            }
-
-            if (workingNode(rank) >= leafNodeSize) {
-              workingFlag(rank) = 0;
-            }
-          });
-      Kokkos::fence();
-
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-            tSum += workingFlag(i);
-          },
-          Kokkos::Sum<int>(workingFlagSum));
-      Kokkos::fence();
-
-      if (workSize > workingFlagSum) {
-        // copy the working node to working node cpy and shrink the work size
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-            KOKKOS_LAMBDA(const int rank) {
-              workingNodeCpy(rank) = workingNode(rank);
-              int counter = rank + 1;
-              if (rank < workingFlagSum)
-                for (int i = 0; i < workSize; i++) {
-                  if (workingFlag(i) == 1) {
-                    counter--;
-                  }
-                  if (counter == 0) {
-                    workingNodeOffset(rank) = i;
-                    break;
-                  }
-                }
-            });
-        Kokkos::fence();
-
-        workSize = workingFlagSum;
-
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-            KOKKOS_LAMBDA(const int rank) {
-              workingNode(rank) = workingNodeCpy(workingNodeOffset(rank));
-            });
-        Kokkos::fence();
-      }
+    if (mMPIRank == 0) {
+      std::cout << "Time for building close and far matrix: "
+                << (double)duration / 1e6 << "s" << std::endl;
+      std::cout << "end of CloseDot" << std::endl;
     }
-
-    printf("num query: %ld, num iteration: %ld, query duration: %.4fs, dot "
-           "duration: %.4fs\n",
-           totalNumQuery, totalNumIter, queryDuration / 1e6, dotDuration / 1e6);
-    std::cout << "end of CloseDot" << std::endl;
   }
 
-  void FarDot(DeviceFloatMatrix u, DeviceFloatMatrix f) {
-    std::cout << "start of FarDot" << std::endl;
+  void PostCheck();
 
-    double queryDuration = 0.0;
-    double dotDuration = 0.0;
-    double ckNormalizationDuration = 0.0;
-    double qkNormalizationDuration = 0.0;
+  void PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f);
 
-    std::size_t totalNumQuery = 0;
-    std::size_t totalNumIter = 0;
+  void CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f);
 
-    const int maxRelativeCoord = 500000;
-    const int matPoolSize = maxRelativeCoord * 10;
-    const int maxWorkNodeSize = 5000;
-    int workNodeSize = 0;
-    int cMatPoolUsedSize = 0;
-    int qMatPoolUsedSize = 0;
-    int allowedWorkload = 0;
-    int allowedWorkloadBasedOnMatPool = 0;
+  void FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f);
 
-    DeviceFloatMatrix relativeCoordPool("relativeCoordPool", maxRelativeCoord,
-                                        3);
-    DeviceDoubleMatrix cMatPool("cMatPool", matPoolSize, 9);
-    DeviceDoubleMatrix qMatPool("qMatPool", matPoolSize, 9);
-
-    DeviceIntVector workingNode("workingNode", maxWorkNodeSize);
-    DeviceIntMatrix workingNodeCMatOffset("workingNodeCMatOffset",
-                                          maxWorkNodeSize, 100);
-    DeviceIntMatrix workingNodeCMatIndex("workingNodeCMatIndex",
-                                         maxWorkNodeSize, 100);
-    DeviceIntMatrix workingNodeQMatOffset("workingNodeQMatOffset",
-                                          maxWorkNodeSize, 100);
-    DeviceIntMatrix workingNodeQMatIndex("workingNodeQMatIndex",
-                                         maxWorkNodeSize, 100);
-    DeviceIntVector workingNodeIteration("workingNodeIteration",
-                                         maxWorkNodeSize);
-
-    DeviceIntVector relativeCoordSize("relativeCoordSize", maxWorkNodeSize);
-    DeviceIntVector relativeCoordOffset("relativeCoordOffset", maxWorkNodeSize);
-
-    auto &mFarMatI = *mFarMatIPtr;
-    auto &mFarMatJ = *mFarMatJPtr;
-    auto &mCoord = *mCoordPtr;
-    auto &mClusterTree = *mClusterTreePtr;
-
-    const int farNodeSize = mFarMatI.extent(0);
-    int finishedNodeSize = 0;
-    int installedNode = 0;
-    int totalCoord = 0;
-
-    bool farDotFinished = false;
-    while (!farDotFinished) {
-      totalNumIter++;
-      if (workNodeSize == 0) {
-        // select working node
-        allowedWorkloadBasedOnMatPool = std::min(
-            matPoolSize - cMatPoolUsedSize, matPoolSize - qMatPoolUsedSize);
-        allowedWorkload =
-            std::min(allowedWorkloadBasedOnMatPool, maxRelativeCoord);
-
-        // estimate the workload
-        int estimatedWorkload;
-        int oldWorkNodeSize = workNodeSize;
-        int leftNode =
-            std::min(farNodeSize - finishedNodeSize, maxWorkNodeSize);
-        workNodeSize = oldWorkNodeSize + leftNode;
-        int lowerWorkNodeSize = oldWorkNodeSize;
-        int upperWorkNodeSize = workNodeSize;
-        // install new working node
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
-                0, std::min(leftNode, maxWorkNodeSize)),
-            KOKKOS_LAMBDA(const std::size_t i) {
-              workingNode(i + oldWorkNodeSize) = installedNode + i;
-            });
-        while (true) {
-          int estimatedQMatWorkload = 0;
-          int estimatedCMatWorkload = 0;
-
-          Kokkos::parallel_reduce(
-              Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0,
-                                                                 workNodeSize),
-              KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-                int nodeI = mFarMatI(workingNode(i));
-                int workload = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
-                tSum += workload;
-              },
-              Kokkos::Sum<int>(estimatedCMatWorkload));
-
-          Kokkos::parallel_reduce(
-              Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0,
-                                                                 workNodeSize),
-              KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-                int nodeJ = mFarMatJ(workingNode(i));
-                int workload = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
-                tSum += workload;
-              },
-              Kokkos::Sum<int>(estimatedQMatWorkload));
-
-          estimatedWorkload =
-              std::max(estimatedCMatWorkload, estimatedQMatWorkload);
-
-          if (estimatedWorkload > allowedWorkload) {
-            upperWorkNodeSize = workNodeSize;
-            workNodeSize = (upperWorkNodeSize + lowerWorkNodeSize) / 2;
-          } else {
-            if (upperWorkNodeSize - lowerWorkNodeSize <= 1) {
-              break;
-            } else {
-              lowerWorkNodeSize = workNodeSize;
-              workNodeSize = (upperWorkNodeSize + lowerWorkNodeSize) / 2;
-            }
-          }
-        }
-
-        installedNode += workNodeSize - oldWorkNodeSize;
-
-        printf("\r%d nodes installed, %d nodes working", installedNode,
-               workNodeSize);
-
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const std::size_t i) {
-              workingNodeIteration(i) = 0;
-              workingNodeCMatIndex(i, 0) = 0;
-            });
-      }
-
-      {
-        // calculate relative coord for C
-        totalCoord = 0;
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-              const int nodeI = mFarMatI(workingNode(i));
-
-              const int indexIStart = mClusterTree(nodeI, 2);
-              const int indexIEnd = mClusterTree(nodeI, 3);
-
-              const int workSizeI = indexIEnd - indexIStart;
-
-              relativeCoordSize(i) = workSizeI;
-
-              tSum += workSizeI;
-            },
-            Kokkos::Sum<int>(totalCoord));
-        Kokkos::fence();
-
-        totalNumQuery += totalCoord;
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              relativeCoordOffset(rank) = 0;
-              for (int i = 0; i < rank; i++) {
-                relativeCoordOffset(rank) += relativeCoordSize(i);
-              }
-            });
-        Kokkos::fence();
-
-        // calculate the relative coordinates
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-              const int nodeI = mFarMatI(workingNode(rank));
-              const int relativeOffset = relativeCoordOffset(rank);
-
-              const int indexIStart = mClusterTree(nodeI, 2);
-              const int indexIEnd = mClusterTree(nodeI, 3);
-              const int workSizeI = indexIEnd - indexIStart;
-
-              const int nodeJ = mFarMatJ(workingNode(rank));
-              const int indexJ =
-                  mClusterTree(nodeJ, 2) +
-                  workingNodeCMatIndex(rank, workingNodeIteration(rank));
-
-              Kokkos::parallel_for(
-                  Kokkos::TeamThreadRange(teamMember, workSizeI),
-                  [&](const int j) {
-                    const int index = relativeOffset + j;
-                    for (int l = 0; l < 3; l++) {
-                      relativeCoordPool(index, l) =
-                          mCoord(indexJ, l) - mCoord(indexIStart + j, l);
-                    }
-                  });
-            });
-        Kokkos::fence();
-
-        // do inference for CMat
-        auto options = torch::TensorOptions()
-                           .dtype(torch::kFloat32)
-                           .device(torch::kCUDA, 0)
-                           .requires_grad(false);
-        torch::Tensor relativeCoordTensor = torch::from_blob(
-            relativeCoordPool.data(), {totalCoord, 3}, options);
-        std::vector<c10::IValue> inputs;
-        inputs.push_back(relativeCoordTensor);
-
-        std::chrono::steady_clock::time_point begin =
-            std::chrono::steady_clock::now();
-
-        auto resultTensor = module.forward(inputs).toTensor();
-
-        std::chrono::steady_clock::time_point end =
-            std::chrono::steady_clock::now();
-        queryDuration +=
-            std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-                .count();
-
-        // copy result to CMat
-        auto dataPtr = resultTensor.data_ptr<float>();
-
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-              const int nodeI = mFarMatI(workingNode(rank));
-              const int relativeOffset = relativeCoordOffset(rank);
-
-              const int indexIStart = mClusterTree(nodeI, 2);
-              const int indexIEnd = mClusterTree(nodeI, 3);
-              const int workSizeI = indexIEnd - indexIStart;
-
-              const int nodeJ = mFarMatJ(workingNode(rank));
-              const int indexJ =
-                  mClusterTree(nodeJ, 2) +
-                  workingNodeCMatIndex(rank, workingNodeIteration(rank));
-
-              Kokkos::parallel_for(
-                  Kokkos::TeamThreadRange(teamMember, workSizeI),
-                  [&](const int j) {
-                    const int index = relativeOffset + j;
-                    for (int l = 0; l < 9; l++)
-                      cMatPool(cMatPoolUsedSize + index, l) =
-                          dataPtr[9 * index + l];
-                  });
-            });
-        Kokkos::fence();
-
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              const int relativeOffset = relativeCoordOffset(rank);
-              workingNodeCMatOffset(rank, workingNodeIteration(rank)) =
-                  cMatPoolUsedSize + relativeOffset;
-            });
-        Kokkos::fence();
-
-        cMatPoolUsedSize += totalCoord;
-      }
-
-      // find index for QMat
-      {
-        auto begin = std::chrono::steady_clock::now();
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-              // normalize the CMat
-
-              const int nodeI = mFarMatI(workingNode(rank));
-              const int indexIStart = mClusterTree(nodeI, 2);
-              const int indexIEnd = mClusterTree(nodeI, 3);
-
-              const int rowSize = indexIEnd - indexIStart;
-
-              const int ckOffset =
-                  workingNodeCMatOffset(rank, workingNodeIteration(rank));
-              const int jk =
-                  workingNodeCMatIndex(rank, workingNodeIteration(rank));
-
-              for (int l = 0; l < workingNodeIteration(rank); l++) {
-                const int cMatOffsetL = workingNodeCMatOffset(rank, l);
-                const int qMatOffsetJk = workingNodeQMatOffset(rank, l) + jk;
-
-                Kokkos::parallel_for(
-                    Kokkos::TeamThreadRange(teamMember, rowSize),
-                    [&](const int j) {
-                      const int index = ckOffset + j;
-                      const int indexL = cMatOffsetL + j;
-
-                      for (int row = 0; row < 3; row++) {
-                        cMatPool(index, 3 * row) -=
-                            cMatPool(indexL, 3 * row) *
-                                qMatPool(qMatOffsetJk, 0) +
-                            cMatPool(indexL, 3 * row + 1) *
-                                qMatPool(qMatOffsetJk, 3) +
-                            cMatPool(indexL, 3 * row + 2) *
-                                qMatPool(qMatOffsetJk, 6);
-
-                        cMatPool(index, 3 * row + 1) -=
-                            cMatPool(indexL, 3 * row) *
-                                qMatPool(qMatOffsetJk, 1) +
-                            cMatPool(indexL, 3 * row + 1) *
-                                qMatPool(qMatOffsetJk, 4) +
-                            cMatPool(indexL, 3 * row + 2) *
-                                qMatPool(qMatOffsetJk, 7);
-
-                        cMatPool(index, 3 * row + 2) -=
-                            cMatPool(indexL, 3 * row) *
-                                qMatPool(qMatOffsetJk, 2) +
-                            cMatPool(indexL, 3 * row + 1) *
-                                qMatPool(qMatOffsetJk, 5) +
-                            cMatPool(indexL, 3 * row + 2) *
-                                qMatPool(qMatOffsetJk, 8);
-                      }
-                    });
-              }
-            });
-        Kokkos::fence();
-
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-
-              const int nodeI = mFarMatI(workingNode(rank));
-              const int indexIStart = mClusterTree(nodeI, 2);
-              const int indexIEnd = mClusterTree(nodeI, 3);
-
-              const int rowSize = indexIEnd - indexIStart;
-
-              const int ckOffset =
-                  workingNodeCMatOffset(rank, workingNodeIteration(rank));
-
-              Kokkos::MaxLoc<double, int>::value_type result;
-              Kokkos::parallel_reduce(
-                  Kokkos::TeamThreadRange(teamMember, rowSize),
-                  [&](const int j,
-                      Kokkos::MaxLoc<double, int>::value_type &update) {
-                    double curNorm = 0.0;
-                    const int index = ckOffset + j;
-                    for (int row = 0; row < 3; row++)
-                      for (int col = 0; col < 3; col++)
-                        curNorm += pow(cMatPool(index, 3 * row + col), 2);
-
-                    if (curNorm > update.val) {
-                      update.val = curNorm;
-                      update.loc = j;
-                    }
-                  },
-                  Kokkos::MaxLoc<double, int>(result));
-
-              workingNodeQMatIndex(rank, workingNodeIteration(rank)) =
-                  result.loc;
-            });
-        Kokkos::fence();
-
-        auto end = std::chrono::steady_clock::now();
-        ckNormalizationDuration +=
-            std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-                .count();
-      }
-
-      {
-        // calculate relative coord for Q
-        totalCoord = 0;
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-              const int nodeJ = mFarMatJ(workingNode(i));
-
-              const int indexJStart = mClusterTree(nodeJ, 2);
-              const int indexJEnd = mClusterTree(nodeJ, 3);
-
-              const int workSizeJ = indexJEnd - indexJStart;
-
-              relativeCoordSize(i) = workSizeJ;
-
-              tSum += workSizeJ;
-            },
-            Kokkos::Sum<int>(totalCoord));
-        Kokkos::fence();
-
-        totalNumQuery += totalCoord;
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              relativeCoordOffset(rank) = 0;
-              for (int i = 0; i < rank; i++) {
-                relativeCoordOffset(rank) += relativeCoordSize(i);
-              }
-            });
-        Kokkos::fence();
-
-        // calculate the relative coordinates
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-              const int nodeJ = mFarMatJ(workingNode(rank));
-              const int relativeOffset = relativeCoordOffset(rank);
-
-              const int indexJStart = mClusterTree(nodeJ, 2);
-              const int indexJEnd = mClusterTree(nodeJ, 3);
-              const int workSizeJ = indexJEnd - indexJStart;
-
-              const int nodeI = mFarMatI(workingNode(rank));
-              const int indexI =
-                  mClusterTree(nodeI, 2) +
-                  workingNodeQMatIndex(rank, workingNodeIteration(rank));
-
-              Kokkos::parallel_for(
-                  Kokkos::TeamThreadRange(teamMember, workSizeJ),
-                  [&](const int j) {
-                    const int index = relativeOffset + j;
-                    for (int l = 0; l < 3; l++) {
-                      relativeCoordPool(index, l) =
-                          mCoord(indexI, l) - mCoord(indexJStart + j, l);
-                    }
-                  });
-            });
-        Kokkos::fence();
-
-        // do inference for QMat
-        auto options = torch::TensorOptions()
-                           .dtype(torch::kFloat32)
-                           .device(torch::kCUDA, 0)
-                           .requires_grad(false);
-        torch::Tensor relativeCoordTensor = torch::from_blob(
-            relativeCoordPool.data(), {totalCoord, 3}, options);
-        std::vector<c10::IValue> inputs;
-        inputs.push_back(relativeCoordTensor);
-
-        std::chrono::steady_clock::time_point begin =
-            std::chrono::steady_clock::now();
-
-        auto resultTensor = module.forward(inputs).toTensor();
-
-        std::chrono::steady_clock::time_point end =
-            std::chrono::steady_clock::now();
-        queryDuration +=
-            std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-                .count();
-
-        // copy result to QMat
-        auto dataPtr = resultTensor.data_ptr<float>();
-
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-              const int nodeJ = mFarMatJ(workingNode(rank));
-              const int relativeOffset = relativeCoordOffset(rank);
-
-              const int indexJStart = mClusterTree(nodeJ, 2);
-              const int indexJEnd = mClusterTree(nodeJ, 3);
-              const int workSizeJ = indexJEnd - indexJStart;
-
-              const int nodeI = mFarMatI(workingNode(rank));
-
-              Kokkos::parallel_for(
-                  Kokkos::TeamThreadRange(teamMember, workSizeJ),
-                  [&](const int j) {
-                    const int index = relativeOffset + j;
-                    for (int l = 0; l < 9; l++)
-                      qMatPool(qMatPoolUsedSize + index, l) =
-                          dataPtr[9 * index + l];
-                  });
-            });
-        Kokkos::fence();
-
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              const int relativeOffset = relativeCoordOffset(rank);
-              workingNodeQMatOffset(rank, workingNodeIteration(rank)) =
-                  qMatPoolUsedSize + relativeOffset;
-            });
-        Kokkos::fence();
-
-        qMatPoolUsedSize += totalCoord;
-      }
-
-      // find index for CMat
-      {
-        auto begin = std::chrono::steady_clock::now();
-        Kokkos::parallel_for(
-            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
-                                                              Kokkos::AUTO()),
-            KOKKOS_LAMBDA(
-                const Kokkos::TeamPolicy<
-                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-              const int rank = teamMember.league_rank();
-              // normalize the QMat
-
-              const int nodeI = mFarMatI(workingNode(rank));
-              const int indexIStart = mClusterTree(nodeI, 2);
-              const int indexIEnd = mClusterTree(nodeI, 3);
-
-              const int rowSize = indexIEnd - indexIStart;
-
-              const int qkOffset =
-                  workingNodeQMatOffset(rank, workingNodeIteration(rank));
-              const int ik =
-                  workingNodeQMatIndex(rank, workingNodeIteration(rank));
-
-              for (int l = 0; l < workingNodeIteration(rank); l++) {
-                const int qMatOffsetL = workingNodeQMatOffset(rank, l);
-                const int cMatOffsetIk = workingNodeQMatOffset(rank, l) + ik;
-
-                Kokkos::parallel_for(
-                    Kokkos::TeamThreadRange(teamMember, rowSize),
-                    [&](const int j) {
-                      const int index = qkOffset + j;
-                      const int indexL = qMatOffsetL + j;
-
-                      for (int row = 0; row < 3; row++) {
-                        qMatPool(index, 3 * row) -=
-                            cMatPool(cMatOffsetIk, 3 * row) *
-                                qMatPool(indexL, 3 * row) +
-                            cMatPool(cMatOffsetIk, 3 * row + 1) *
-                                qMatPool(indexL, 3 * row + 1) +
-                            cMatPool(cMatOffsetIk, 3 * row + 2) *
-                                qMatPool(indexL, 3 * row + 2);
-                      }
-                    });
-              }
-            });
-        Kokkos::fence();
-        auto end = std::chrono::steady_clock::now();
-
-        qkNormalizationDuration +=
-            std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-                .count();
-      }
-
-      // stop criterion
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const int i) {
-            workingNodeIteration(i) += 1;
-            workingNodeCMatIndex(i, workingNodeIteration(i)) = 0;
-            if (workingNodeIteration(i) == 8) {
-              workingNode(i) = -1;
-            }
-          });
-
-      int finishedWorkNodeSize = 0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const std::size_t i, int &tFinishedWorkNodeSize) {
-            if (workingNode(i) == -1) {
-              tFinishedWorkNodeSize += 1;
-            }
-          },
-          Kokkos::Sum<int>(finishedWorkNodeSize));
-
-      if (finishedWorkNodeSize == workNodeSize) {
-        finishedNodeSize += workNodeSize;
-        workNodeSize = 0;
-        cMatPoolUsedSize = 0;
-        qMatPoolUsedSize = 0;
-      }
-
-      if (finishedNodeSize == farNodeSize) {
-        break;
-      }
-    }
-
-    std::cout << std::endl;
-
-    printf("num query: %ld, num iteration: %ld, query duration: %.4fs, dot "
-           "duration: %.4fs\n",
-           totalNumQuery, totalNumIter, queryDuration / 1e6, dotDuration / 1e6);
-    printf(
-        "ck normalization duration: %.4fs, qk normalization duration: %.4fs\n",
-        ckNormalizationDuration / 1e6, qkNormalizationDuration / 1e6);
-
-    std::cout << "end of FarDot" << std::endl;
-  }
-
-  void Dot(DeviceFloatMatrix u, DeviceFloatMatrix f) {
-    std::cout << "start of Dot" << std::endl;
+  void Dot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+    if (mMPIRank == 0)
+      std::cout << "start of Dot" << std::endl;
 
     // initialize u
     Kokkos::parallel_for(
@@ -1469,7 +700,19 @@ public:
     CloseDot(u, f);
     FarDot(u, f);
 
-    std::cout << "end of Dot" << std::endl;
+    DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(u);
+    Kokkos::deep_copy(hostU, u);
+
+    MPI_Allreduce(MPI_IN_PLACE, hostU.data(), hostU.extent(0) * hostU.extent(1),
+                  MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    Kokkos::deep_copy(u, hostU);
+
+    // PostCheckDot(u, f);
+    // PostCheck();
+
+    if (mMPIRank == 0)
+      std::cout << "end of Dot" << std::endl;
   }
 };
 
