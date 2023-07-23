@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch_tensorrt
 
 class Net(torch.nn.Module):
     def __init__(self, net1):
@@ -16,11 +15,11 @@ class Net(torch.nn.Module):
         y[:, 8] += 1.0
         y = y / r
         y[(r < 0.00001).nonzero(), :] = torch.tensor(
-                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], dtype=torch.float32).cuda()
+                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], dtype=torch.float32, device=x.device)
         return y
 
 nn_2body = torch.load('3D_force_UB_max600_try2.pkl')
-model = Net(nn_2body).cpu()
+model = Net(nn_2body).cuda()
 
 sm = torch.jit.script(model)
 torch.jit.save(sm, "3D_force_UB_max600_try2.pt")
