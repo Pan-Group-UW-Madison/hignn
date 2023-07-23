@@ -53,7 +53,7 @@ protected:
   int mMPISize;
 
   std::size_t clusterTreeSize;
-  torch::jit::script::Module module;
+  torch::jit::script::Module model;
 
   std::string mDeviceString;
 
@@ -174,10 +174,10 @@ public:
     MPI_Comm_rank(MPI_COMM_WORLD, &mMPIRank);
     MPI_Comm_size(MPI_COMM_WORLD, &mMPISize);
 
-    // load script module
-    module = torch::jit::load("3D_force_UB_max600_try2.pt");
+    // load script model
+    model = torch::jit::load("3D_force_UB_max600_try2.pt");
     mDeviceString = "cuda:" + std::to_string(mMPIRank);
-    module.to(mDeviceString);
+    model.to(mDeviceString);
 
     auto options = torch::TensorOptions()
                        .dtype(torch::kFloat32)
@@ -187,7 +187,7 @@ public:
     std::vector<c10::IValue> inputs;
     inputs.push_back(testTensor);
 
-    auto testResult = module.forward(inputs);
+    auto testResult = model.forward(inputs);
   }
 
   void Update() {
@@ -671,7 +671,6 @@ public:
     if (mMPIRank == 0) {
       std::cout << "Time for building close and far matrix: "
                 << (double)duration / 1e6 << "s" << std::endl;
-      std::cout << "end of CloseDot" << std::endl;
     }
   }
 

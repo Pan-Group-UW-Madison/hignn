@@ -8,14 +8,15 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   double dotDuration = 0;
 
   const int leafNodeSize = mLeafNodePtr->extent(0);
-  const int maxWorkSize = std::min(100, leafNodeSize);
+  const int maxWorkSize = 50;
   int workSize = maxWorkSize;
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
 
   DeviceFloatVector relativeCoordPool(
-      "relativeCoordPool", maxWorkSize * mBlockSize * mBlockSize * 3);
+      "relativeCoordPool",
+      maxWorkSize * mBlockSize * mBlockSize * 3);  // 11.44MB
   DeviceFloatMatrix queryResultPool("queryResultPool",
                                     maxWorkSize * mBlockSize * mBlockSize, 3);
 
@@ -135,7 +136,7 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     std::chrono::steady_clock::time_point begin =
         std::chrono::steady_clock::now();
 
-    auto resultTensor = module.forward(inputs).toTensor();
+    auto resultTensor = model.forward(inputs).toTensor();
 
     std::chrono::steady_clock::time_point end =
         std::chrono::steady_clock::now();

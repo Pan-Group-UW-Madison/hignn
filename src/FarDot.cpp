@@ -36,6 +36,7 @@ struct reduction_identity<ArrReduce> {
 void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   if (mMPIRank == 0)
     std::cout << "start of FarDot" << std::endl;
+  MPI_Barrier(MPI_COMM_WORLD);
 
   double queryDuration = 0.0;
   double dotDuration = 0.0;
@@ -48,7 +49,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   int innerNumIter = 0;
   int maxInnerNumIter = 0;
 
-  const int maxRelativeCoord = 300000;
+  const int maxRelativeCoord = 500000;
   const int matPoolSize = maxRelativeCoord * 40;
   const int maxWorkNodeSize = 5000;
   const int maxIter = 100;
@@ -61,9 +62,10 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       maxRelativeCoord * 3);
-  DeviceDoubleMatrix cMatPool("cMatPool", matPoolSize, 9);
-  DeviceDoubleMatrix qMatPool("qMatPool", matPoolSize, 9);
-  DeviceDoubleVector middleMatPool("middleMatPool", middleMatPoolSize * 3);
+  DeviceDoubleMatrix cMatPool("cMatPool", matPoolSize, 9);  // 1.34GB
+  DeviceDoubleMatrix qMatPool("qMatPool", matPoolSize, 9);  // 1.34GB
+  DeviceDoubleVector middleMatPool("middleMatPool",
+                                   middleMatPoolSize * 3);  // 0.01GB
   DeviceDoubleMatrix ckMatPool("ckMatPool", maxRelativeCoord, 9);
   DeviceDoubleMatrix ckInvMatPool("ckInvMatPool", maxWorkNodeSize, 9);
 
@@ -252,7 +254,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       std::chrono::steady_clock::time_point begin =
           std::chrono::steady_clock::now();
 
-      auto resultTensor = module.forward(inputs).toTensor();
+      auto resultTensor = model.forward(inputs).toTensor();
 
       std::chrono::steady_clock::time_point end =
           std::chrono::steady_clock::now();
@@ -522,7 +524,7 @@ void Problem::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       std::chrono::steady_clock::time_point begin =
           std::chrono::steady_clock::now();
 
-      auto resultTensor = module.forward(inputs).toTensor();
+      auto resultTensor = model.forward(inputs).toTensor();
 
       std::chrono::steady_clock::time_point end =
           std::chrono::steady_clock::now();

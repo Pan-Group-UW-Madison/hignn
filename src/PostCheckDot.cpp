@@ -167,7 +167,7 @@ void Problem::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     std::chrono::steady_clock::time_point begin =
         std::chrono::steady_clock::now();
 
-    auto resultTensor = module.forward(inputs).toTensor();
+    auto resultTensor = model.forward(inputs).toTensor();
 
     std::chrono::steady_clock::time_point end =
         std::chrono::steady_clock::now();

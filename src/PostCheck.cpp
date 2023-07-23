@@ -243,7 +243,7 @@ void Problem::PostCheck() {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      auto resultTensor = module.forward(inputs).toTensor();
+      auto resultTensor = model.forward(inputs).toTensor();
 
       // copy result to CMat
       auto dataPtr = resultTensor.data_ptr<float>();
@@ -498,7 +498,7 @@ void Problem::PostCheck() {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      auto resultTensor = module.forward(inputs).toTensor();
+      auto resultTensor = model.forward(inputs).toTensor();
 
       // copy result to QMat
       auto dataPtr = resultTensor.data_ptr<float>();
