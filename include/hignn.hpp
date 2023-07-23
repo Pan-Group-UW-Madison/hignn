@@ -175,7 +175,8 @@ public:
     MPI_Comm_size(MPI_COMM_WORLD, &mMPISize);
 
     // load script model
-    model = torch::jit::load("3D_force_UB_max600_try2.pt");
+    model = torch::jit::load("3D_force_UB_max600_try2_" +
+                             std::to_string(mMPIRank) + ".pt");
     mDeviceString = "cuda:" + std::to_string(mMPIRank);
     model.to(mDeviceString);
 

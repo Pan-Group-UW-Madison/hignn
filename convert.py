@@ -7,7 +7,6 @@ class Net(torch.nn.Module):
         self.net1 = net1
 
     def forward(self, x):
-        # with torch.no_grad():
         r = torch.norm(x, p=2, dim=1, keepdim=True)
         y = self.net1(x)
         y[:, 0] += 1.0
@@ -21,8 +20,10 @@ class Net(torch.nn.Module):
 nn_2body = torch.load('3D_force_UB_max600_try2.pkl')
 model = Net(nn_2body).cuda()
 
-sm = torch.jit.script(model)
-torch.jit.save(sm, "3D_force_UB_max600_try2.pt")
+for i in range(4):
+    model.to(i)
+    sm = torch.jit.script(model)
+    torch.jit.save(sm, "3D_force_UB_max600_try2_"+str(i)+".pt")
 
 # trt_model = torch_tensorrt.compile(model, inputs = [torch_tensorrt.Input((128, 3), dtype=torch.float32)],
 #     enabled_precisions = torch.float32
