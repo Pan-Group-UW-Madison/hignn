@@ -1,0 +1,51 @@
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+
+SHELL ["/bin/bash", "-c"]
+WORKDIR /local
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+COPY dependencies.focal.sh /opt/dependencies.focal.sh
+RUN apt-get update && \
+    /opt/dependencies.focal.sh && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY common.focal.sh /opt/common.focal.sh
+RUN /opt/common.focal.sh && rm -f /opt/common.focal.sh
+
+# GPU-aware MPI
+RUN wget https://www.open-mpi.org//software/ompi/v4.1/downloads/openmpi-4.1.5.tar.gz && \
+    tar -xvf openmpi-4.1.5.tar.gz && \
+    cd openmpi-4.1.5 && \
+    ./configure --with-cuda=/usr/local/cuda --prefix=/opt/openmpi && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf openmpi-4.1.5.tar.gz openmpi-4.1.5
+
+# Kokkos
+RUN export OMPI_CXX=/opt/kokkos/bin/nvcc_wrapper && \
+    cd /opt/ && \
+    git clone https://github.com/kokkos/kokkos.git && \
+    cd kokkos && \
+    git checkout release-candidate-4.0.01 && \
+    mkdir build && \
+    cd build && \
+    cmake -D CMAKE_INSTALL_PREFIX=/opt/kokkos -D Kokkos_ENABLE_CUDA=ON -D Kokkos_CUDA_DIR=/usr/local/cuda -D Kokkos_ARCH_AMPERE86=On -D Kokkos_ENABLE_OPENMP=On -D CMAKE_CXX_STANDARD=17 -D BUILD_SHARED_LIBS=ON .. && \
+    make -j$(nproc) && \
+    make install
+
+# PyTorch and LibTorch with CUDA 11.8 as PyTorch Geometric requires CUDA 11.8
+RUN pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+RUN wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcu118.zip && \
+    unzip libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip && \
+    mv libtorch /opt/libtorch && \
+    rm -rf libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip libtorch
+
+# PyTorch Geometric
+RUN pip3 install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+
+# environment variables
+ENV PATH="${PATH}:/opt/openmpi/bin"
+ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+ENV OMPI_ALLOW_RUN_AS_ROOT=1
