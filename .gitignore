@@ -34,7 +34,6 @@
 CMakeFiles/
 CMakeCache.txt
 data/
-pybind11/
 
 *.pt
 *.pkl
