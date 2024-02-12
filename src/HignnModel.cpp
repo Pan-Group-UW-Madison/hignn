@@ -380,9 +380,6 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
   CloseDot(u, f);
   FarDot(u, f);
 
-  if (mPostCheckFlag)
-    PostCheckDot(u, f);
-
   DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(u);
 
   Kokkos::deep_copy(hostU, u);
@@ -398,6 +395,9 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
         uData(i, 2) = hostU(i, 2);
       });
   Kokkos::fence();
+
+  if (mPostCheckFlag)
+    PostCheckDot(u, f);
 
   if (mMPIRank == 0)
     std::cout << "end of Dot" << std::endl;
