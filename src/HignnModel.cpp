@@ -396,8 +396,11 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
       });
   Kokkos::fence();
 
-  if (mPostCheckFlag)
+  if (mPostCheckFlag) {
+    Kokkos::deep_copy(u, hostU);
+
     PostCheckDot(u, f);
+  }
 
   if (mMPIRank == 0)
     std::cout << "end of Dot" << std::endl;
