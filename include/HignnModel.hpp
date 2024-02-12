@@ -74,6 +74,8 @@ protected:
 
   std::string mDeviceString;
 
+  bool mPostCheckFlag;
+
 protected:
   std::size_t GetCount();
 
@@ -121,6 +123,8 @@ public:
   void SetMaxIter(const int maxIter);
 
   void SetMatPoolSizeFactor(const int factor);
+
+  void SetPostCheckFlag(const bool flag);
 };
 
 #endif

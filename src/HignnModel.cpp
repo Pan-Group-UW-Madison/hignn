@@ -135,6 +135,8 @@ void HignnModel::Reorder(const std::vector<std::size_t> &reorderedMap) {
 }
 
 HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
+  mPostCheckFlag = false;
+
   auto data = coord.unchecked<2>();
 
   auto shape = coord.shape();
@@ -378,6 +380,9 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
   CloseDot(u, f);
   FarDot(u, f);
 
+  if (mPostCheckFlag)
+    PostCheckDot(u, f);
+
   DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(u);
 
   Kokkos::deep_copy(hostU, u);
@@ -424,4 +429,8 @@ void HignnModel::SetMaxIter(const int maxIter) {
 
 void HignnModel::SetMatPoolSizeFactor(const int factor) {
   mMatPoolSizeFactor = factor;
+}
+
+void HignnModel::SetPostCheckFlag(const bool flag) {
+  mPostCheckFlag = flag;
 }

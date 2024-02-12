@@ -10,7 +10,7 @@ def velocity_update(t, position):
     hignn_model.UpdateCoord(position)
     hignn_model.Update()
     velocity = np.zeros(position.shape)
-    force = np.zeros(position.shape)
+    force = np.ones(position.shape)
     
     hignn_model.Dot(velocity, force)
     
@@ -23,8 +23,8 @@ if __name__ == '__main__':
     rank = comm.Get_rank()
     
     hignn.Init()
-    
-    N = 50
+
+    N = 15
     nx = N
     ny = N
     nz = N
@@ -51,6 +51,7 @@ if __name__ == '__main__':
     hignn_model.SetEpsilon(0.05)
     hignn_model.SetMaxIter(50)
     hignn_model.SetMatPoolSizeFactor(40)
+    hignn_model.SetPostCheckFlag(True)
     
     time_integrator = hignn.ExplicitEuler()
     
