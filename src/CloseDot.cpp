@@ -1,6 +1,6 @@
-#include "hignn.hpp"
+#include "HignnModel.hpp"
 
-void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   if (mMPIRank == 0)
     std::cout << "start of CloseDot" << std::endl;
 
@@ -46,6 +46,7 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         workingNode(i) = i;
         workingFlag(i) = 1;
       });
+  Kokkos::fence();
 
   const int blockSize = mBlockSize;
   int workingFlagSum = workSize;
@@ -136,7 +137,7 @@ void Problem::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     std::chrono::steady_clock::time_point begin =
         std::chrono::steady_clock::now();
 
-    auto resultTensor = model.forward(inputs).toTensor();
+    auto resultTensor = mTwoBodyModel.forward(inputs).toTensor();
 
     std::chrono::steady_clock::time_point end =
         std::chrono::steady_clock::now();

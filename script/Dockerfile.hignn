@@ -28,7 +28,7 @@ RUN export OMPI_CXX=/opt/kokkos/bin/nvcc_wrapper && \
     cd /opt/ && \
     git clone https://github.com/kokkos/kokkos.git && \
     cd kokkos && \
-    git checkout release-candidate-4.0.01 && \
+    git checkout release-candidate-4.2.01 && \
     mkdir build && \
     cd build && \
     cmake -D CMAKE_INSTALL_PREFIX=/opt/kokkos -D Kokkos_ENABLE_CUDA=ON -D Kokkos_CUDA_DIR=/usr/local/cuda -D Kokkos_ARCH_AMPERE86=On -D Kokkos_ENABLE_OPENMP=On -D CMAKE_CXX_STANDARD=17 -D BUILD_SHARED_LIBS=ON .. && \
@@ -36,14 +36,14 @@ RUN export OMPI_CXX=/opt/kokkos/bin/nvcc_wrapper && \
     make install
 
 # PyTorch and LibTorch with CUDA 11.8 as PyTorch Geometric requires CUDA 11.8
-RUN pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 RUN wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcu118.zip && \
     unzip libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip && \
     mv libtorch /opt/libtorch && \
     rm -rf libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip libtorch
 
 # PyTorch Geometric
-RUN pip3 install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+RUN pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
 
 # environment variables
 ENV PATH="${PATH}:/opt/openmpi/bin"
@@ -51,3 +51,9 @@ ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
 ENV OMPI_ALLOW_RUN_AS_ROOT=1
 ENV Kokkos_PATH=/opt/kokkos
 ENV LibTorch_PATH=/opt/libtorch
+
+ENV OMP_PROC_BIND=close
+ENV OMP_PLACES=cores
+ENV OMP_NUM_THREADS=10
+
+RUN pip install mpi4py

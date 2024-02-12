@@ -1,4 +1,4 @@
-#include "hignn.hpp"
+#include "HignnModel.hpp"
 
 struct ArrReduce {
   double values[6];
@@ -33,18 +33,18 @@ struct reduction_identity<ArrReduce> {
 };
 }  // namespace Kokkos
 
-void Problem::PostCheck() {
+void HignnModel::PostCheck() {
   if (mMPIRank == 0)
-    std::cout << "start of FarDot" << std::endl;
+    std::cout << "start of PostCheck" << std::endl;
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
   int innerNumIter = 0;
   int maxInnerNumIter = 0;
 
-  const int maxRelativeCoord = 100000;
-  const int matPoolSize = maxRelativeCoord * 100;
-  const int maxWorkNodeSize = 1000;
+  const int maxRelativeCoord = 500000;
+  const int matPoolSize = maxRelativeCoord * 40;
+  const int maxWorkNodeSize = 5000;
   const int maxIter = 100;
   const int middleMatPoolSize = maxWorkNodeSize * maxIter;
   int workNodeSize = 0;
@@ -120,29 +120,18 @@ void Problem::PostCheck() {
           Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
           KOKKOS_LAMBDA(const int i) { workingNode(i) = installedNode + i; });
       while (true) {
-        int estimatedQMatWorkload = 0;
-        int estimatedCMatWorkload = 0;
+        std::size_t estimatedMatWorkload = 0;
 
         Kokkos::parallel_reduce(
             Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
+            KOKKOS_LAMBDA(const std::size_t i, std::size_t &tSum) {
               int nodeI = mFarMatI(workingNode(i));
-              int workload = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
-              tSum += workload;
-            },
-            Kokkos::Sum<int>(estimatedCMatWorkload));
-
-        Kokkos::parallel_reduce(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
               int nodeJ = mFarMatJ(workingNode(i));
-              int workload = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
-              tSum += workload;
+              int workloadI = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
+              int workloadJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
+              tSum += workloadI * workloadJ;
             },
-            Kokkos::Sum<int>(estimatedQMatWorkload));
-
-        estimatedWorkload =
-            std::max(estimatedCMatWorkload, estimatedQMatWorkload);
+            Kokkos::Sum<std::size_t>(estimatedMatWorkload));
 
         if (estimatedWorkload > allowedWorkload) {
           upperWorkNodeSize = workNodeSize;
@@ -243,7 +232,7 @@ void Problem::PostCheck() {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      auto resultTensor = model.forward(inputs).toTensor();
+      auto resultTensor = mTwoBodyModel.forward(inputs).toTensor();
 
       // copy result to CMat
       auto dataPtr = resultTensor.data_ptr<float>();
@@ -498,7 +487,7 @@ void Problem::PostCheck() {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      auto resultTensor = model.forward(inputs).toTensor();
+      auto resultTensor = mTwoBodyModel.forward(inputs).toTensor();
 
       // copy result to QMat
       auto dataPtr = resultTensor.data_ptr<float>();

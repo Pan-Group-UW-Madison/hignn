@@ -7,10 +7,13 @@ apt-get install -y --no-install-recommends \
     cmake \
     g++-9 \
     gcc-9 \
+    gcc-9-base \
+    gcc-9-plugin-dev \
     git \
     openssh-client \
     openssl \
-    python3-dev \
+    python3.9 \
+    python3.9-dev \
     python3-pip \
     unzip \
     valgrind \
@@ -35,3 +38,5 @@ apt-get install -y --no-install-recommends \
         --slave /usr/bin/x86_64-linux-gnu-gcov-dump x86_64-linux-gnu-gcov-dump /usr/bin/x86_64-linux-gnu-gcov-dump-9 \
         --slave /usr/bin/x86_64-linux-gnu-gcov-tool x86_64-linux-gnu-gcov-tool /usr/bin/x86_64-linux-gnu-gcov-tool-9 \
     || exit 1
+
+update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1

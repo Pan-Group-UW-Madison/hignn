@@ -1,6 +1,6 @@
-#include "hignn.hpp"
+#include "HignnModel.hpp"
 
-void Problem::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   if (mMPIRank == 0)
     std::cout << "start of PostCheckDot" << std::endl;
 
@@ -167,7 +167,7 @@ void Problem::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     std::chrono::steady_clock::time_point begin =
         std::chrono::steady_clock::now();
 
-    auto resultTensor = model.forward(inputs).toTensor();
+    auto resultTensor = mTwoBodyModel.forward(inputs).toTensor();
 
     std::chrono::steady_clock::time_point end =
         std::chrono::steady_clock::now();
