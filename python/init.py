@@ -31,7 +31,7 @@ if __name__ == '__main__':
             break
     
     if need_convert:
-        os.system('python3 ' + source_path + './python/convert.py --gpus '+str(device_count)+' --model '+model_name)
+        os.system('python3 ' + './python/convert.py --gpus '+str(device_count)+' --model '+model_name)
     
     # build hignn library
     os.chdir(source_path + '/build')

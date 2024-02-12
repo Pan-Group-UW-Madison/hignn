@@ -36,7 +36,7 @@ if __name__ == '__main__':
         print("Please provide a model name")
         exit()
     
-    file_name = "../nn/"+model_name+".pkl"
+    file_name = "./nn/"+model_name+".pkl"
 
     nn_2body = torch.load(file_name)
     model = Net(nn_2body).cuda()
@@ -44,5 +44,5 @@ if __name__ == '__main__':
     for i in range(gpus):
         model.to(i)
         sm = torch.jit.script(model)
-        target_file_name = "../nn/"+model_name+"_"+str(i)+".pt"
+        target_file_name = "./nn/"+model_name+"_"+str(i)+".pt"
         torch.jit.save(sm, target_file_name)
