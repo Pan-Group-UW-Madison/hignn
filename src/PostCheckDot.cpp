@@ -32,7 +32,8 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   const std::size_t leafNodeSize = leafNodeEnd - leafNodeStart;
 
-  const std::size_t maxWorkSize = std::min<std::size_t>(leafNodeSize, 100);
+  const std::size_t maxWorkSize =
+      std::min<std::size_t>(leafNodeSize, mMaxCloseDotWorkNodeSize);
   int workSize = maxWorkSize;
 
   std::size_t totalNumQuery = 0;
@@ -316,72 +317,72 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     std::cout << "post check result: " << sqrt(diffNorm / uNorm) << std::endl;
   }
 
-  // DeviceDoubleMatrix::HostMirror uHost = Kokkos::create_mirror_view(u);
-  // Kokkos::deep_copy(uHost, u);
-  // DeviceDoubleMatrix::HostMirror uPostCheckHost =
-  //     Kokkos::create_mirror_view(uPostCheck);
-  // Kokkos::deep_copy(uPostCheckHost, uPostCheck);
-  // DeviceFloatMatrix::HostMirror coords = Kokkos::create_mirror_view(mCoord);
-  // Kokkos::deep_copy(coords, mCoord);
+  DeviceDoubleMatrix::HostMirror uHost = Kokkos::create_mirror_view(u);
+  Kokkos::deep_copy(uHost, u);
+  DeviceDoubleMatrix::HostMirror uPostCheckHost =
+      Kokkos::create_mirror_view(uPostCheck);
+  Kokkos::deep_copy(uPostCheckHost, uPostCheck);
+  DeviceFloatMatrix::HostMirror coords = Kokkos::create_mirror_view(mCoord);
+  Kokkos::deep_copy(coords, mCoord);
 
-  // std::ofstream vtkStream;
-  // vtkStream.open("output.vtk", std::ios::out | std::ios::trunc);
+  std::ofstream vtkStream;
+  vtkStream.open("output.vtk", std::ios::out | std::ios::trunc);
 
-  // vtkStream << "# vtk DataFile Version 2.0" << std::endl;
+  vtkStream << "# vtk DataFile Version 2.0" << std::endl;
 
-  // vtkStream << "output " << std::endl;
+  vtkStream << "output " << std::endl;
 
-  // vtkStream << "ASCII" << std::endl << std::endl;
+  vtkStream << "ASCII" << std::endl << std::endl;
 
-  // const int NN = uPostCheckHost.extent(0);
+  const int NN = uPostCheckHost.extent(0);
 
-  // vtkStream << "DATASET POLYDATA" << std::endl
-  //           << "POINTS " << NN << " float" << std::endl;
+  vtkStream << "DATASET POLYDATA" << std::endl
+            << "POINTS " << NN << " float" << std::endl;
 
-  // for (int i = 0; i < NN; i++) {
-  //   for (int j = 0; j < 3; j++)
-  //     vtkStream << coords(i, j) << " ";
-  //   vtkStream << std::endl;
-  // }
+  for (int i = 0; i < NN; i++) {
+    for (int j = 0; j < 3; j++)
+      vtkStream << coords(i, j) << " ";
+    vtkStream << std::endl;
+  }
 
-  // vtkStream << "POINT_DATA " << NN << std::endl;
+  vtkStream << "POINT_DATA " << NN << std::endl;
 
-  // vtkStream << "SCALARS u float 3" << std::endl
-  //           << "LOOKUP_TABLE default" << std::endl;
+  vtkStream << "SCALARS u float 3" << std::endl
+            << "LOOKUP_TABLE default" << std::endl;
 
-  // for (int i = 0; i < NN; i++) {
-  //   vtkStream << uHost(i, 0) << " " << uHost(i, 1) << " " << uHost(i, 2)
-  //             << std::endl;
-  // }
+  for (int i = 0; i < NN; i++) {
+    vtkStream << uHost(i, 0) << " " << uHost(i, 1) << " " << uHost(i, 2)
+              << std::endl;
+  }
 
-  // vtkStream.close();
+  vtkStream.close();
 
-  // vtkStream.open("output-check.vtk", std::ios::out | std::ios::trunc);
+  vtkStream.open("output-check.vtk", std::ios::out | std::ios::trunc);
 
-  // vtkStream << "# vtk DataFile Version 2.0" << std::endl;
+  vtkStream << "# vtk DataFile Version 2.0" << std::endl;
 
-  // vtkStream << "output " << std::endl;
+  vtkStream << "output " << std::endl;
 
-  // vtkStream << "ASCII" << std::endl << std::endl;
+  vtkStream << "ASCII" << std::endl << std::endl;
 
-  // vtkStream << "DATASET POLYDATA" << std::endl
-  //           << "POINTS " << NN << " float" << std::endl;
+  vtkStream << "DATASET POLYDATA" << std::endl
+            << "POINTS " << NN << " float" << std::endl;
 
-  // for (int i = 0; i < NN; i++) {
-  //   for (int j = 0; j < 3; j++)
-  //     vtkStream << coords(i, j) << " ";
-  //   vtkStream << std::endl;
-  // }
+  for (int i = 0; i < NN; i++) {
+    for (int j = 0; j < 3; j++)
+      vtkStream << coords(i, j) << " ";
+    vtkStream << std::endl;
+  }
 
-  // vtkStream << "POINT_DATA " << NN << std::endl;
+  vtkStream << "POINT_DATA " << NN << std::endl;
 
-  // vtkStream << "SCALARS u float 3" << std::endl
-  //           << "LOOKUP_TABLE default" << std::endl;
+  vtkStream << "SCALARS u float 3" << std::endl
+            << "LOOKUP_TABLE default" << std::endl;
 
-  // for (int i = 0; i < NN; i++) {
-  //   vtkStream << uPostCheckHost(i, 0) << " " << uPostCheckHost(i, 1) << " "
-  //             << uPostCheckHost(i, 2) << std::endl;
-  // }
+  for (int i = 0; i < NN; i++) {
+    vtkStream << uPostCheckHost(i, 0) << " " << uPostCheckHost(i, 1) << " "
+              << uPostCheckHost(i, 2) << std::endl;
+  }
 
-  // vtkStream.close();
+  vtkStream.close();
 }

@@ -8,15 +8,14 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   double dotDuration = 0;
 
   const int leafNodeSize = mLeafNodePtr->extent(0);
-  const int maxWorkSize = 50;
-  int workSize = maxWorkSize;
+  const int maxWorkSize = mMaxCloseDotWorkNodeSize;
+  int workSize = std::min(maxWorkSize, leafNodeSize);
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
 
   DeviceFloatVector relativeCoordPool(
-      "relativeCoordPool",
-      maxWorkSize * mBlockSize * mBlockSize * 3);  // 11.44MB
+      "relativeCoordPool", maxWorkSize * mBlockSize * mBlockSize * 3);
   DeviceFloatMatrix queryResultPool("queryResultPool",
                                     maxWorkSize * mBlockSize * mBlockSize, 3);
 

@@ -134,8 +134,60 @@ void HignnModel::Reorder(const std::vector<std::size_t> &reorderedMap) {
   Kokkos::deep_copy(mVertex, mVertexMirror);
 }
 
+void HignnModel::Reorder(const std::vector<size_t> &reorderedMap,
+                         DeviceDoubleMatrix v) {
+  DeviceDoubleMatrix vCopy("vCopy", v.extent(0), v.extent(1));
+
+  DeviceIndexVector deviceReorderedMap("reorderedMap", reorderedMap.size());
+  auto hostReorderedMap = Kokkos::create_mirror_view(deviceReorderedMap);
+
+  for (size_t i = 0; i < reorderedMap.size(); i++)
+    hostReorderedMap(i) = reorderedMap[i];
+
+  Kokkos::deep_copy(deviceReorderedMap, hostReorderedMap);
+
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, v.extent(0)),
+      KOKKOS_LAMBDA(const int i) {
+        vCopy(i, 0) = v(deviceReorderedMap(i), 0);
+        vCopy(i, 1) = v(deviceReorderedMap(i), 1);
+        vCopy(i, 2) = v(deviceReorderedMap(i), 2);
+      });
+
+  Kokkos::deep_copy(v, vCopy);
+}
+
+void HignnModel::BackwardReorder(const std::vector<size_t> &reorderedMap,
+                                 DeviceDoubleMatrix v) {
+  DeviceDoubleMatrix vCopy("vCopy", v.extent(0), v.extent(1));
+
+  DeviceIndexVector deviceReorderedMap("reorderedMap", reorderedMap.size());
+  auto hostReorderedMap = Kokkos::create_mirror_view(deviceReorderedMap);
+
+  for (size_t i = 0; i < reorderedMap.size(); i++)
+    hostReorderedMap(i) = reorderedMap[i];
+
+  Kokkos::deep_copy(deviceReorderedMap, hostReorderedMap);
+
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, v.extent(0)),
+      KOKKOS_LAMBDA(const int i) {
+        vCopy(deviceReorderedMap(i), 0) = v(i, 0);
+        vCopy(deviceReorderedMap(i), 1) = v(i, 1);
+        vCopy(deviceReorderedMap(i), 2) = v(i, 2);
+      });
+
+  Kokkos::deep_copy(v, vCopy);
+}
+
 HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
+  // default values
   mPostCheckFlag = false;
+
+  mMaxFarDotWorkNodeSize = 5000;
+  mMaxCloseDotWorkNodeSize = 50;
+
+  mMaxRelativeCoord = 500000;
 
   auto data = coord.unchecked<2>();
 
@@ -368,7 +420,7 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
 
   Kokkos::parallel_for(
       Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0, f.extent(0)),
-      KOKKOS_LAMBDA(const int i) {
+      [&](const int i) {
         hostF(i, 0) = fData(i, 0);
         hostF(i, 1) = fData(i, 1);
         hostF(i, 2) = fData(i, 2);
@@ -377,6 +429,8 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
 
   Kokkos::deep_copy(f, hostF);
 
+  Reorder(mReorderedMap, f);
+
   CloseDot(u, f);
   FarDot(u, f);
 
@@ -384,8 +438,18 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
 
   Kokkos::deep_copy(hostU, u);
 
-  MPI_Allreduce(MPI_IN_PLACE, hostU.data(), hostU.extent(0) * hostU.extent(1),
+  MPI_Allreduce(MPI_IN_PLACE, hostU.data(), u.extent(0) * u.extent(1),
                 MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+  Kokkos::deep_copy(u, hostU);
+
+  if (mPostCheckFlag) {
+    PostCheckDot(u, f);
+  }
+
+  BackwardReorder(mReorderedMap, u);
+
+  Kokkos::deep_copy(hostU, u);
 
   Kokkos::parallel_for(
       Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0, u.extent(0)),
@@ -395,12 +459,6 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
         uData(i, 2) = hostU(i, 2);
       });
   Kokkos::fence();
-
-  if (mPostCheckFlag) {
-    Kokkos::deep_copy(u, hostU);
-
-    PostCheckDot(u, f);
-  }
 
   if (mMPIRank == 0)
     std::cout << "end of Dot" << std::endl;
@@ -436,4 +494,16 @@ void HignnModel::SetMatPoolSizeFactor(const int factor) {
 
 void HignnModel::SetPostCheckFlag(const bool flag) {
   mPostCheckFlag = flag;
+}
+
+void HignnModel::SetMaxFarDotWorkNodeSize(const int size) {
+  mMaxFarDotWorkNodeSize = size;
+}
+
+void HignnModel::SetMaxCloseDotWorkNodeSize(const int size) {
+  mMaxCloseDotWorkNodeSize = size;
+}
+
+void HignnModel::SetMaxRelativeCoord(const int size) {
+  mMaxRelativeCoord = size;
 }

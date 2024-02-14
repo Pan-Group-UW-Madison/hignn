@@ -186,6 +186,11 @@ void HignnModel::CloseFarCheck() {
     }
   }
 
+  if (closeMat[mLeafNodeList[leafNodeStartI]].size() == leafNodeStartJ) {
+    leafNodeStartI++;
+    leafNodeStartJ = 0;
+  }
+
   std::size_t leafNodeSize = leafNodeEndI - leafNodeStartI + 1;
 
   mLeafNodePtr = std::make_shared<DeviceIndexVector>("mLeafNode", leafNodeSize);
@@ -241,9 +246,12 @@ void HignnModel::CloseFarCheck() {
             closeMat[mLeafNodeList[i + leafNodeStartI]][j];
   }
 
+  int totalClosePair = hostCloseMatI(leafNodeSize);
+  MPI_Allreduce(MPI_IN_PLACE, &totalClosePair, 1, MPI_INT, MPI_SUM,
+                MPI_COMM_WORLD);
+
   if (mMPIRank == 0)
-    std::cout << "Total close pair: " << hostCloseMatI(mLeafNodeList.size())
-              << std::endl;
+    std::cout << "Total close pair: " << totalClosePair << std::endl;
 
   std::size_t totalCloseEntry = 0;
   for (int i = 0; i < mLeafNodeList.size(); i++) {

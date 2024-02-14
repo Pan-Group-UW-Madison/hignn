@@ -49,9 +49,9 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   int innerNumIter = 0;
   int maxInnerNumIter = 0;
 
-  const int maxRelativeCoord = 500000;
+  const int maxRelativeCoord = mMaxRelativeCoord;
   const int matPoolSize = maxRelativeCoord * mMatPoolSizeFactor;
-  const int maxWorkNodeSize = 5000;
+  const int maxWorkNodeSize = mMaxFarDotWorkNodeSize;
   const int maxIter = mMaxIter;
   const int middleMatPoolSize = maxWorkNodeSize * maxIter;
   int workNodeSize = 0;
