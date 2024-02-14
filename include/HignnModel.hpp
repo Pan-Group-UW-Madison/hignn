@@ -69,6 +69,11 @@ protected:
   int mMaxIter;
   int mMatPoolSizeFactor;
 
+  int mMaxFarDotWorkNodeSize;
+  int mMaxCloseDotWorkNodeSize;
+
+  int mMaxRelativeCoord;
+
   std::size_t mClusterTreeSize;
   torch::jit::script::Module mTwoBodyModel;
 
@@ -125,6 +130,18 @@ public:
   void SetMatPoolSizeFactor(const int factor);
 
   void SetPostCheckFlag(const bool flag);
+
+  void SetMaxFarDotWorkNodeSize(const int size);
+
+  void SetMaxCloseDotWorkNodeSize(const int size);
+
+  void SetMaxRelativeCoord(const int size);
+
+  void Reorder(const std::vector<std::size_t> &reorderedMap,
+               DeviceDoubleMatrix v);
+
+  void BackwardReorder(const std::vector<std::size_t> &reorderedMap,
+                       DeviceDoubleMatrix v);
 };
 
 #endif

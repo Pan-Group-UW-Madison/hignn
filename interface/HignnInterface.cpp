@@ -20,6 +20,10 @@ PYBIND11_MODULE(hignn, m) {
       .def("SetEpsilon", &HignnModel::SetEpsilon)
       .def("SetMaxIter", &HignnModel::SetMaxIter)
       .def("SetMatPoolSizeFactor", &HignnModel::SetMatPoolSizeFactor)
+      .def("SetMaxFarDotWorkNodeSize", &HignnModel::SetMaxFarDotWorkNodeSize)
+      .def("SetMaxCloseDotWorkNodeSize",
+           &HignnModel::SetMaxCloseDotWorkNodeSize)
+      .def("SetMaxRelativeCoord", &HignnModel::SetMaxRelativeCoord)
       .def("SetPostCheckFlag", &HignnModel::SetPostCheckFlag)
       .def("Update", &HignnModel::Update)
       .def("UpdateCoord", &HignnModel::UpdateCoord)
