@@ -78,12 +78,15 @@ void HignnModel::CloseFarCheck() {
       for (int j = 0; j < closeMat[i].size(); j++) {
         bool isFar = CloseFarCheck(mAux, node, closeMat[i][j]);
 
+        std::size_t nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
+        std::size_t nodeSizeJ =
+            mClusterTree(closeMat[i][j], 3) - mClusterTree(closeMat[i][j], 2);
+
+        isFar = isFar && nodeSizeI < mMaxRelativeCoord &&
+                nodeSizeJ < mMaxRelativeCoord;
+
         if (isFar) {
           farMat[i].push_back(closeMat[i][j]);
-
-          std::size_t nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
-          std::size_t nodeSizeJ =
-              mClusterTree(closeMat[i][j], 3) - mClusterTree(closeMat[i][j], 2);
 
           total_entry += nodeSizeI * nodeSizeJ;
         } else {
@@ -313,17 +316,28 @@ void HignnModel::CloseFarCheck() {
   }
 
   std::size_t farDotQueryNum = 0;
+  std::size_t maxSingleNodeSize = 0;
   for (int i = 0; i < farMatIMirror.extent(0); i++) {
     std::size_t nodeISize =
         mClusterTree(farMatIMirror(i), 3) - mClusterTree(farMatIMirror(i), 2);
     std::size_t nodeJSize =
         mClusterTree(farMatJMirror(i), 3) - mClusterTree(farMatJMirror(i), 2);
     farDotQueryNum += nodeISize * nodeJSize;
+
+    if (nodeISize > maxSingleNodeSize)
+      maxSingleNodeSize = nodeISize;
+    if (nodeJSize > maxSingleNodeSize)
+      maxSingleNodeSize = nodeJSize;
   }
   MPI_Allreduce(MPI_IN_PLACE, &farDotQueryNum, 1, MPI_UNSIGNED_LONG, MPI_SUM,
                 MPI_COMM_WORLD);
   if (mMPIRank == 0)
     std::cout << "Total far entry: " << farDotQueryNum << std::endl;
+
+  MPI_Allreduce(MPI_IN_PLACE, &maxSingleNodeSize, 1, MPI_UNSIGNED_LONG, MPI_MAX,
+                MPI_COMM_WORLD);
+  if (mMPIRank == 0)
+    std::cout << "Max single node size: " << maxSingleNodeSize << std::endl;
 
   Kokkos::deep_copy(mFarMatI, farMatIMirror);
   Kokkos::deep_copy(mFarMatJ, farMatJMirror);
