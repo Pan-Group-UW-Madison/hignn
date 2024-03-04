@@ -58,7 +58,7 @@ protected:
 
   std::vector<std::size_t> mReorderedMap;
 
-  int mBlockSize;
+  unsigned int mBlockSize;
   int mDim;
 
   int mMPIRank;
@@ -66,13 +66,15 @@ protected:
 
   double mEpsilon;
 
+  double mMaxFarFieldDistance;
+
   int mMaxIter;
   int mMatPoolSizeFactor;
 
   int mMaxFarDotWorkNodeSize;
   int mMaxCloseDotWorkNodeSize;
 
-  int mMaxRelativeCoord;
+  size_t mMaxRelativeCoord;
 
   std::size_t mClusterTreeSize;
   torch::jit::script::Module mTwoBodyModel;
@@ -135,7 +137,9 @@ public:
 
   void SetMaxCloseDotWorkNodeSize(const int size);
 
-  void SetMaxRelativeCoord(const int size);
+  void SetMaxRelativeCoord(const size_t size);
+
+  void SetMaxFarFieldDistance(const double distance);
 
   void Reorder(const std::vector<std::size_t> &reorderedMap,
                DeviceDoubleMatrix v);

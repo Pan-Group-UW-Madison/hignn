@@ -110,7 +110,7 @@ void HignnModel::PostCheck() {
       allowedWorkload = maxRelativeCoord;
 
       // estimate the workload
-      int estimatedWorkload;
+      int estimatedWorkload = 0;
       int leftNode = std::min(farNodeSize - finishedNodeSize, maxWorkNodeSize);
       workNodeSize = leftNode;
       int lowerWorkNodeSize = 0;

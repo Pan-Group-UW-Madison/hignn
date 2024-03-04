@@ -21,13 +21,14 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   const std::size_t totalLeafNodeSize = mLeafNodeList.size();
 
   std::size_t leafNodeStart = 0, leafNodeEnd;
-  for (int i = 0; i < mMPIRank; i++) {
+  for (unsigned int i = 0; i < (unsigned int)mMPIRank; i++) {
     std::size_t rankLeafNodeSize =
         totalLeafNodeSize / mMPISize + (i < totalLeafNodeSize % mMPISize);
     leafNodeStart += rankLeafNodeSize;
   }
-  leafNodeEnd = leafNodeStart + totalLeafNodeSize / mMPISize +
-                (mMPIRank < totalLeafNodeSize % mMPISize);
+  leafNodeEnd =
+      leafNodeStart + totalLeafNodeSize / mMPISize +
+      ((unsigned int)mMPIRank < totalLeafNodeSize % (unsigned int)mMPISize);
   leafNodeEnd = std::min(leafNodeEnd, totalLeafNodeSize);
 
   const std::size_t leafNodeSize = leafNodeEnd - leafNodeStart;
@@ -63,7 +64,7 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   DeviceIntVector::HostMirror hostLeafNode =
       Kokkos::create_mirror_view(mLeafNode);
 
-  for (int i = 0; i < totalLeafNodeSize; i++) {
+  for (size_t i = 0; i < totalLeafNodeSize; i++) {
     hostLeafNode(i) = mLeafNodeList[i];
   }
   Kokkos::deep_copy(mLeafNode, hostLeafNode);
@@ -236,7 +237,7 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             workingNode(rank) += maxWorkSize;
           }
 
-          if (workingNode(rank) >= leafNodeSize) {
+          if (workingNode(rank) >= (int)leafNodeSize) {
             workingFlag(rank) = 0;
           }
         });

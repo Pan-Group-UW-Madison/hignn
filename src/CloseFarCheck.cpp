@@ -15,7 +15,7 @@ void HignnModel::CloseFarCheck() {
   Kokkos::resize(mAux, mClusterTree.extent(0), 6);
 
   // init mAux
-  for (int i = 0; i < mAux.extent(0); i++)
+  for (size_t i = 0; i < mAux.extent(0); i++)
     mAux(i, 0) = -std::numeric_limits<float>::max();
 
   // go over all nodes, calculate aux based on the tree structure.
@@ -69,13 +69,13 @@ void HignnModel::CloseFarCheck() {
   std::size_t total_entry = 0;
 
   closeMat[0].push_back(0);
-  for (int i = 0; i < mClusterTree.extent(0); i++) {
+  for (size_t i = 0; i < mClusterTree.extent(0); i++) {
     auto node = i;
 
     if (mClusterTree(node, 0) != 0) {
       std::vector<int> childCloseMat;
 
-      for (int j = 0; j < closeMat[i].size(); j++) {
+      for (size_t j = 0; j < closeMat[i].size(); j++) {
         bool isFar = CloseFarCheck(mAux, node, closeMat[i][j]);
 
         std::size_t nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
@@ -103,7 +103,7 @@ void HignnModel::CloseFarCheck() {
     } else {
       std::vector<int> newCloseMat;
 
-      for (int j = 0; j < closeMat[i].size(); j++) {
+      for (size_t j = 0; j < closeMat[i].size(); j++) {
         bool isFar = CloseFarCheck(mAux, node, closeMat[i][j]);
 
         std::size_t nodeSizeI = mClusterTree(node, 3) - mClusterTree(node, 2);
@@ -112,9 +112,29 @@ void HignnModel::CloseFarCheck() {
 
         total_entry += nodeSizeI * nodeSizeJ;
 
-        if (isFar)
-          farMat[i].push_back(closeMat[i][j]);
-        else {
+        if (isFar) {
+          // need to make sure the column node is small enough
+          if (nodeSizeJ < mMaxRelativeCoord)
+            farMat[i].push_back(closeMat[i][j]);
+          else {
+            std::stack<int> workChildStack;
+            workChildStack.push(closeMat[i][j]);
+
+            while (workChildStack.size() != 0) {
+              auto childNode = workChildStack.top();
+              workChildStack.pop();
+              size_t nodeSize =
+                  mClusterTree(childNode, 3) - mClusterTree(childNode, 2);
+
+              if (nodeSize < mMaxRelativeCoord) {
+                farMat[i].push_back(childNode);
+              } else {
+                workChildStack.push(mClusterTree(childNode, 0));
+                workChildStack.push(mClusterTree(childNode, 1));
+              }
+            }
+          }
+        } else {
           // need to make sure this is a leaf node for close mat.
           if (mClusterTree(closeMat[i][j], 0) == 0)
             newCloseMat.push_back(closeMat[i][j]);
@@ -135,7 +155,7 @@ void HignnModel::CloseFarCheck() {
               }
             }
 
-            for (int k = 0; k < childCloseMat.size(); k++)
+            for (size_t k = 0; k < childCloseMat.size(); k++)
               newCloseMat.push_back(childCloseMat[k]);
           }
         }
@@ -154,11 +174,11 @@ void HignnModel::CloseFarCheck() {
   }
 
   // split leaf node among mpi ranks
-  std::size_t leafNodeStart, leafNodeStartI, leafNodeStartJ;
-  std::size_t leafNodeEnd, leafNodeEndI, leafNodeEndJ;
+  std::size_t leafNodeStart, leafNodeStartI = 0, leafNodeStartJ = 0;
+  std::size_t leafNodeEnd, leafNodeEndI = 0, leafNodeEndJ = 0;
 
   std::size_t totalCloseMatSize = 0;
-  for (int i = 0; i < mLeafNodeList.size(); i++)
+  for (size_t i = 0; i < mLeafNodeList.size(); i++)
     totalCloseMatSize += closeMat[mLeafNodeList[i]].size();
 
   std::size_t estimatedLeafNodeSize =
@@ -167,8 +187,8 @@ void HignnModel::CloseFarCheck() {
   leafNodeEnd =
       std::min(estimatedLeafNodeSize * (mMPIRank + 1), totalCloseMatSize);
 
-  int counter = 0;
-  for (int i = 0; i < mLeafNodeList.size(); i++) {
+  unsigned int counter = 0;
+  for (size_t i = 0; i < mLeafNodeList.size(); i++) {
     counter += closeMat[mLeafNodeList[i]].size();
     if (leafNodeStart <= counter) {
       leafNodeStartI = i;
@@ -179,7 +199,7 @@ void HignnModel::CloseFarCheck() {
   }
 
   counter = 0;
-  for (int i = 0; i < mLeafNodeList.size(); i++) {
+  for (size_t i = 0; i < mLeafNodeList.size(); i++) {
     counter += closeMat[mLeafNodeList[i]].size();
     if (leafNodeEnd <= counter) {
       leafNodeEndI = i;
@@ -203,7 +223,7 @@ void HignnModel::CloseFarCheck() {
 
   auto &mLeafNode = *mLeafNodePtr;
 
-  for (int i = 0; i < leafNodeSize; i++)
+  for (size_t i = 0; i < leafNodeSize; i++)
     hostLeafNode(i) = mLeafNodeList[i + leafNodeStartI];
   Kokkos::deep_copy(mLeafNode, hostLeafNode);
 
@@ -215,7 +235,7 @@ void HignnModel::CloseFarCheck() {
   DeviceIndexVector::HostMirror hostCloseMatI =
       Kokkos::create_mirror_view(*mCloseMatIPtr);
   hostCloseMatI(0) = 0;
-  for (int i = 0; i < leafNodeSize; i++) {
+  for (size_t i = 0; i < leafNodeSize; i++) {
     if (i == 0)
       hostCloseMatI(i + 1) =
           closeMat[mLeafNodeList[i + leafNodeStartI]].size() - leafNodeStartJ;
@@ -232,18 +252,18 @@ void HignnModel::CloseFarCheck() {
 
   DeviceIndexVector::HostMirror hostCloseMatJ =
       Kokkos::create_mirror_view(*mCloseMatJPtr);
-  for (int i = 0; i < leafNodeSize; i++) {
+  for (size_t i = 0; i < leafNodeSize; i++) {
     if (i == 0)
-      for (int j = leafNodeStartJ;
+      for (size_t j = leafNodeStartJ;
            j < closeMat[mLeafNodeList[i + leafNodeStartI]].size(); j++)
         hostCloseMatJ(hostCloseMatI(i) + j - leafNodeStartJ) =
             closeMat[mLeafNodeList[i + leafNodeStartI]][j];
     else if (i == leafNodeSize - 1)
-      for (int j = 0; j < leafNodeEndJ; j++)
+      for (size_t j = 0; j < leafNodeEndJ; j++)
         hostCloseMatJ(hostCloseMatI(i) + j) =
             closeMat[mLeafNodeList[i + leafNodeStartI]][j];
     else
-      for (int j = 0; j < closeMat[mLeafNodeList[i + leafNodeStartI]].size();
+      for (size_t j = 0; j < closeMat[mLeafNodeList[i + leafNodeStartI]].size();
            j++)
         hostCloseMatJ(hostCloseMatI(i) + j) =
             closeMat[mLeafNodeList[i + leafNodeStartI]][j];
@@ -257,12 +277,12 @@ void HignnModel::CloseFarCheck() {
     std::cout << "Total close pair: " << totalClosePair << std::endl;
 
   std::size_t totalCloseEntry = 0;
-  for (int i = 0; i < mLeafNodeList.size(); i++) {
-    int nodeI = mLeafNodeList[i];
-    int nodeSizeI = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
-    for (int j = 0; j < closeMat[nodeI].size(); j++) {
-      int nodeJ = closeMat[nodeI][j];
-      int nodeSizeJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
+  for (size_t i = 0; i < mLeafNodeList.size(); i++) {
+    size_t nodeI = mLeafNodeList[i];
+    size_t nodeSizeI = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
+    for (size_t j = 0; j < closeMat[nodeI].size(); j++) {
+      size_t nodeJ = closeMat[nodeI][j];
+      size_t nodeSizeJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
 
       totalCloseEntry += nodeSizeI * nodeSizeJ;
     }
@@ -276,7 +296,7 @@ void HignnModel::CloseFarCheck() {
 
   std::size_t totalFarSize = 0;
   std::size_t totalFarNode = 0;
-  for (int i = 0; i < farMat.size(); i++) {
+  for (size_t i = 0; i < farMat.size(); i++) {
     if (farMat[i].size() != 0) {
       totalFarSize += farMat[i].size();
       totalFarNode++;
@@ -289,7 +309,8 @@ void HignnModel::CloseFarCheck() {
 
   // split far pair among mpi ranks
   std::size_t farMatSize = totalFarSize / (std::size_t)mMPISize;
-  farMatSize += ((totalFarSize % (std::size_t)mMPISize) > mMPIRank) ? 1 : 0;
+  farMatSize +=
+      ((totalFarSize % (std::size_t)mMPISize) > (std::size_t)mMPIRank) ? 1 : 0;
 
   mFarMatIPtr = std::make_shared<DeviceIndexVector>("mFarMatI", farMatSize);
   auto &mFarMatI = *mFarMatIPtr;
@@ -304,9 +325,9 @@ void HignnModel::CloseFarCheck() {
 
   counter = 0;
   int matCounter = 0;
-  for (int i = 0; i < farMat.size(); i++) {
-    for (int j = 0; j < farMat[i].size(); j++) {
-      if (counter % mMPISize == mMPIRank) {
+  for (size_t i = 0; i < farMat.size(); i++) {
+    for (size_t j = 0; j < farMat[i].size(); j++) {
+      if (counter % (std::size_t)mMPISize == (std::size_t)mMPIRank) {
         farMatIMirror(matCounter) = i;
         farMatJMirror(matCounter) = farMat[i][j];
         matCounter++;
@@ -317,7 +338,7 @@ void HignnModel::CloseFarCheck() {
 
   std::size_t farDotQueryNum = 0;
   std::size_t maxSingleNodeSize = 0;
-  for (int i = 0; i < farMatIMirror.extent(0); i++) {
+  for (size_t i = 0; i < farMatIMirror.extent(0); i++) {
     std::size_t nodeISize =
         mClusterTree(farMatIMirror(i), 3) - mClusterTree(farMatIMirror(i), 2);
     std::size_t nodeJSize =

@@ -44,7 +44,7 @@ void HignnModel::ComputeAux(const std::size_t first,
     aux[2 * d + 1] = -std::numeric_limits<float>::max();
   }
 
-  for (int i = first; i < last; i++)
+  for (size_t i = first; i < last; i++)
     for (int d = 0; d < mDim; d++) {
       aux[2 * d] =
           (aux[2 * d] > mVertexMirror(i, d)) ? mVertexMirror(i, d) : aux[2 * d];
@@ -56,7 +56,7 @@ void HignnModel::ComputeAux(const std::size_t first,
 
 size_t HignnModel::Divide(const std::size_t first,
                           const std::size_t last,
-                          const int axis,
+                          [[maybe_unused]] const int axis,
                           std::vector<std::size_t> &reorderedMap) {
   auto &mVertexMirror = *mCoordMirrorPtr;
 
@@ -65,7 +65,7 @@ size_t HignnModel::Divide(const std::size_t first,
   std::vector<float> mean(mDim, 0.0);
   std::vector<float> temp(L);
 
-  for (auto i = first; i < last; i++)
+  for (size_t i = first; i < last; i++)
     for (int d = 0; d < mDim; d++)
       mean[d] += mVertexMirror(reorderedMap[i], d);
   for (int d = 0; d < mDim; d++)
@@ -73,7 +73,7 @@ size_t HignnModel::Divide(const std::size_t first,
 
   Eigen::MatrixXf vertexHat(mDim, L);
   for (int d = 0; d < mDim; d++) {
-    for (int i = 0; i < L; i++) {
+    for (size_t i = 0; i < L; i++) {
       vertexHat(d, i) = mVertexMirror(reorderedMap[i + first], d) - mean[d];
     }
   }
@@ -84,7 +84,7 @@ size_t HignnModel::Divide(const std::size_t first,
   Eigen::MatrixXf U = svdHolder.matrixU();
   Eigen::MatrixXf V = svdHolder.matrixV();
 
-  for (int i = 0; i < L; i++) {
+  for (size_t i = 0; i < L; i++) {
     temp[i] = 0.0;
     for (int d = 0; d < mDim; d++) {
       temp[i] += U(d, 0) * vertexHat(d, i);
@@ -102,10 +102,10 @@ size_t HignnModel::Divide(const std::size_t first,
   // improve it.
 
   std::vector<std::size_t> copyIndex(L);
-  for (auto i = 0; i < L; i++)
+  for (size_t i = 0; i < L; i++)
     copyIndex[i] = reorderedMap[i + first];
 
-  for (auto i = 0; i < L; i++)
+  for (size_t i = 0; i < L; i++)
     reorderedMap[i + first] = copyIndex[newIndex[i]];
 
   auto result = std::upper_bound(temp.begin(), temp.end(), 0);
@@ -119,13 +119,13 @@ void HignnModel::Reorder(const std::vector<std::size_t> &reorderedMap) {
 
   HostFloatMatrix copyVertex;
   Kokkos::resize(copyVertex, reorderedMap.size(), 3);
-  for (auto i = 0; i < reorderedMap.size(); i++) {
+  for (size_t i = 0; i < reorderedMap.size(); i++) {
     copyVertex(i, 0) = mVertexMirror(i, 0);
     copyVertex(i, 1) = mVertexMirror(i, 1);
     copyVertex(i, 2) = mVertexMirror(i, 2);
   }
 
-  for (auto i = 0; i < reorderedMap.size(); i++) {
+  for (size_t i = 0; i < reorderedMap.size(); i++) {
     mVertexMirror(i, 0) = copyVertex(reorderedMap[i], 0);
     mVertexMirror(i, 1) = copyVertex(reorderedMap[i], 1);
     mVertexMirror(i, 2) = copyVertex(reorderedMap[i], 2);
@@ -189,6 +189,8 @@ HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
 
   mMaxRelativeCoord = 500000;
 
+  mMaxFarFieldDistance = 1000;
+
   auto data = coord.unchecked<2>();
 
   auto shape = coord.shape();
@@ -200,7 +202,7 @@ HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
 
   auto &hostCoord = *mCoordMirrorPtr;
 
-  for (size_t i = 0; i < shape[0]; i++) {
+  for (size_t i = 0; i < (size_t)shape[0]; i++) {
     hostCoord(i, 0) = data(i, 0);
     hostCoord(i, 1) = data(i, 1);
     hostCoord(i, 2) = data(i, 2);
@@ -237,7 +239,8 @@ void HignnModel::LoadTwoBodyModel(const std::string &modelPath) {
   auto testResult = mTwoBodyModel.forward(inputs);
 }
 
-void HignnModel::LoadThreeBodyModel(const std::string &modelPath) {
+void HignnModel::LoadThreeBodyModel([
+    [maybe_unused]] const std::string &modelPath) {
 }
 
 void HignnModel::Update() {
@@ -265,8 +268,8 @@ void HignnModel::Build() {
   HostIndexMatrix mClusterTree;
   Kokkos::resize(mClusterTree, estimatedSize, 5);
 
-  for (std::size_t i = 0; i < mClusterTree.extent(0); i++)
-    for (int j = 0; j < mClusterTree.extent(1); j++)
+  for (size_t i = 0; i < mClusterTree.extent(0); i++)
+    for (size_t j = 0; j < mClusterTree.extent(1); j++)
       mClusterTree(i, j) = 0;
 
   mReorderedMap.resize(GetCount());
@@ -291,7 +294,7 @@ void HignnModel::Build() {
 
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < numSelectedNode; i++) {
-      auto node = selectedNode[i];
+      size_t node = selectedNode[i];
 
       if ((mClusterTree(node, 3) - mClusterTree(node, 2)) > mBlockSize) {
         nodeDividend[i] = Divide(mClusterTree(node, 2), mClusterTree(node, 3),
@@ -334,8 +337,8 @@ void HignnModel::Build() {
 
   auto &hostClusterTree = *mClusterTreeMirrorPtr;
 
-  for (std::size_t i = 0; i < mClusterTreeSize; i++)
-    for (int j = 0; j < mClusterTree.extent(1); j++)
+  for (size_t i = 0; i < mClusterTreeSize; i++)
+    for (size_t j = 0; j < mClusterTree.extent(1); j++)
       hostClusterTree(i, j) = mClusterTree(i, j);
 
   Kokkos::deep_copy(*mClusterTreePtr, hostClusterTree);
@@ -471,7 +474,7 @@ void HignnModel::UpdateCoord(pybind11::array_t<float> &coord) {
 
   auto &hostCoord = *mCoordMirrorPtr;
 
-  for (size_t i = 0; i < shape[0]; i++) {
+  for (size_t i = 0; i < (size_t)shape[0]; i++) {
     hostCoord(i, 0) = data(i, 0);
     hostCoord(i, 1) = data(i, 1);
     hostCoord(i, 2) = data(i, 2);
@@ -504,6 +507,10 @@ void HignnModel::SetMaxCloseDotWorkNodeSize(const int size) {
   mMaxCloseDotWorkNodeSize = size;
 }
 
-void HignnModel::SetMaxRelativeCoord(const int size) {
+void HignnModel::SetMaxRelativeCoord(const size_t size) {
   mMaxRelativeCoord = size;
+}
+
+void HignnModel::SetMaxFarFieldDistance(const double distance) {
+  mMaxFarFieldDistance = distance;
 }
