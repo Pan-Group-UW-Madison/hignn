@@ -169,8 +169,11 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::parallel_for(
           Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
           KOKKOS_LAMBDA(const std::size_t i) {
+            const int nodeJ = mFarMatJ(workingNode(i));
+            int workload = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
+
             workingNodeIteration(i) = 0;
-            workingNodeSelectedColIdx(i, 0) = 0;
+            workingNodeSelectedColIdx(i, 0) = workload / 2;
 
             nu2(i) = 0.0;
             mu2(i) = 0.0;
@@ -269,7 +272,15 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           KOKKOS_LAMBDA(const int index) {
             const int i = index / 9;
             const int j = index % 9;
-            cMatPool(cMatPoolUsedSize + i, j) = dataPtr[index];
+            const int row = j / 3;
+            const int col = j % 3;
+            if (row == col)
+              cMatPool(cMatPoolUsedSize + i, j) = dataPtr[index];
+            else {
+              const int symmetricIndex = i * 9 + col * 3 + row;
+              cMatPool(cMatPoolUsedSize + i, j) =
+                  0.5 * (dataPtr[index] + dataPtr[symmetricIndex]);
+            }
           });
       Kokkos::fence();
 
@@ -340,7 +351,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             const int indexIStart = mClusterTree(nodeI, 2);
             const int indexIEnd = mClusterTree(nodeI, 3);
 
-            const int rowSize = indexIEnd - indexIStart;
+            const int rowSize = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
 
             const int ckOffset =
                 workingNodeCMatOffset(rank, workingNodeIteration(rank));
@@ -539,7 +550,15 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           KOKKOS_LAMBDA(const int index) {
             const int i = index / 9;
             const int j = index % 9;
-            qMatPool(qMatPoolUsedSize + i, j) = dataPtr[index];
+            const int row = j / 3;
+            const int col = j % 3;
+            if (row == col)
+              qMatPool(qMatPoolUsedSize + i, j) = dataPtr[index];
+            else {
+              const int symmetricIndex = i * 9 + col * 3 + row;
+              qMatPool(qMatPoolUsedSize + i, j) =
+                  0.5 * (dataPtr[index] + dataPtr[symmetricIndex]);
+            }
           });
       Kokkos::fence();
 
@@ -1099,6 +1118,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     }
   }
 
+  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &totalNumQuery, 1, MPI_UNSIGNED_LONG, MPI_SUM,
                 MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &totalNumIter, 1, MPI_UNSIGNED_LONG, MPI_SUM,
