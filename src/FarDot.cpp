@@ -33,6 +33,12 @@ struct reduction_identity<ArrReduce> {
 };
 }  // namespace Kokkos
 
+// Flag used for determinant check
+#define FarDotDeterminantCheck
+
+// Flag used for post check the velocity
+#define FarDotVelocityCheck
+
 void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   if (mMPIRank == 0)
     std::cout << "start of FarDot" << std::endl;
@@ -91,6 +97,8 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   DeviceDoubleVector workingNodeDoubleCopy("workingNodeDoubleCopy",
                                            maxWorkNodeSize);
+
+  DeviceIntVector uDotCheck("uDotCheck", maxWorkNodeSize);
 
   const double epsilon = mEpsilon;
   const double epsilon2 = epsilon * epsilon;
@@ -365,10 +373,26 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   const int index = ckOffset + j;
                   const int ckIndex = relativeCoordOffset(rank) + j;
 
-                  for (int k = 0; k < 9; k++) {
-                    curNorm += pow(cMatPool(index, k), 2);
+                  // for (int k = 0; k < 9; k++) {
+                  //   curNorm += pow(cMatPool(index, k), 2);
+                  //   ckMatPool(ckIndex, k) = cMatPool(index, k);
+                  // }
+
+                  const double a = cMatPool(index, 0);
+                  const double b = cMatPool(index, 1);
+                  const double c = cMatPool(index, 2);
+                  const double d = cMatPool(index, 3);
+                  const double e = cMatPool(index, 4);
+                  const double f = cMatPool(index, 5);
+                  const double g = cMatPool(index, 6);
+                  const double h = cMatPool(index, 7);
+                  const double i = cMatPool(index, 8);
+
+                  curNorm = a * (e * i - f * h) - b * (d * i - f * g) +
+                            c * (d * h - e * g);
+
+                  for (int k = 0; k < 9; k++)
                     ckMatPool(ckIndex, k) = cMatPool(index, k);
-                  }
 
                   bool exist = false;
                   for (int l = 0; l < workingNodeIteration(rank); l++)
@@ -644,9 +668,22 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   double curNorm = 0.0;
                   const int index = qkOffset + j;
 
-                  for (int k = 0; k < 9; k++) {
-                    curNorm += pow(qMatPool(index, k), 2);
-                  }
+                  // for (int k = 0; k < 9; k++) {
+                  //   curNorm += pow(qMatPool(index, k), 2);
+                  // }
+
+                  const double a = qMatPool(index, 0);
+                  const double b = qMatPool(index, 1);
+                  const double c = qMatPool(index, 2);
+                  const double d = qMatPool(index, 3);
+                  const double e = qMatPool(index, 4);
+                  const double f = qMatPool(index, 5);
+                  const double g = qMatPool(index, 6);
+                  const double h = qMatPool(index, 7);
+                  const double i = qMatPool(index, 8);
+
+                  curNorm = a * (e * i - f * h) - b * (d * i - f * g) +
+                            c * (d * h - e * g);
 
                   bool exist = false;
                   for (int l = 0; l <= workingNodeIteration(rank); l++)
@@ -820,7 +857,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                       Kokkos::Sum<double>(qkDot));
 
                   if (teamMember.team_rank() == 0)
-                    mu2(rank) += 2.0 * ckDot * qkDot;
+                    mu2(rank) += 2.0 * abs(ckDot) * abs(qkDot);
                   teamMember.team_barrier();
                 }
             }
@@ -844,6 +881,66 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       stopCriterionDuration +=
           std::chrono::duration_cast<std::chrono::microseconds>(end - start)
               .count();
+
+      {
+        int iterationCheckResult = 0;
+        Kokkos::parallel_reduce(
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
+            KOKKOS_LAMBDA(const int i, int &tIterationCheckResult) {
+              if (workingNodeIteration(i) >= 15)
+                tIterationCheckResult++;
+            },
+            Kokkos::Sum<int>(iterationCheckResult));
+        Kokkos::fence();
+
+        if (iterationCheckResult > 0) {
+          std::cout << "Number of iteration is large in rank: " << mMPIRank
+                    << std::endl;
+
+          DeviceIndexVector::HostMirror farMatIHost =
+              Kokkos::create_mirror_view(mFarMatI);
+          DeviceIndexVector::HostMirror farMatJHost =
+              Kokkos::create_mirror_view(mFarMatJ);
+          Kokkos::deep_copy(farMatIHost, mFarMatI);
+          Kokkos::deep_copy(farMatJHost, mFarMatJ);
+
+          DeviceIndexMatrix::HostMirror clusterTreeHost =
+              Kokkos::create_mirror_view(mClusterTree);
+          Kokkos::deep_copy(clusterTreeHost, mClusterTree);
+
+          DeviceIntVector::HostMirror workingNodeIterationHost =
+              Kokkos::create_mirror_view(workingNodeIteration);
+          Kokkos::deep_copy(workingNodeIterationHost, workingNodeIteration);
+
+          DeviceIntVector::HostMirror workingNodeHost =
+              Kokkos::create_mirror_view(workingNode);
+          Kokkos::deep_copy(workingNodeHost, workingNode);
+
+          DeviceDoubleVector::HostMirror nuHost =
+              Kokkos::create_mirror_view(nu2);
+          DeviceDoubleVector::HostMirror muHost =
+              Kokkos::create_mirror_view(mu2);
+          Kokkos::deep_copy(nuHost, nu2);
+          Kokkos::deep_copy(muHost, mu2);
+
+          for (int i = 0; i < workNodeSize; i++) {
+            if (workingNodeIterationHost(i) >= 15) {
+              std::cout << "farMatI: " << farMatIHost(workingNodeHost(i))
+                        << " row size: "
+                        << clusterTreeHost(farMatIHost(workingNodeHost(i)), 3) -
+                               clusterTreeHost(farMatIHost(workingNodeHost(i)),
+                                               2)
+                        << " farMatJ: " << farMatJHost(workingNodeHost(i))
+                        << " col size: "
+                        << clusterTreeHost(farMatJHost(workingNodeHost(i)), 3) -
+                               clusterTreeHost(farMatJHost(workingNodeHost(i)),
+                                               2)
+                        << " mu: " << muHost(i) << " nu: " << nuHost(i)
+                        << std::endl;
+            }
+          }
+        }
+      }
     }
 
     int newWorkNodeSize = 0;
@@ -919,6 +1016,11 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
+          KOKKOS_LAMBDA(const int rank) { uDotCheck(rank) = 0; });
+      Kokkos::fence();
+
+      Kokkos::parallel_for(
           Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
                                                             Kokkos::AUTO()),
           KOKKOS_LAMBDA(
@@ -953,6 +1055,80 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 });
           });
       Kokkos::fence();
+
+      Kokkos::parallel_for(
+          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
+                                                            Kokkos::AUTO()),
+          KOKKOS_LAMBDA(
+              const Kokkos::TeamPolicy<
+                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
+            const int rank = teamMember.league_rank();
+            const int workingNodeRank = dotProductRank(rank);
+
+            const int nodeI = mFarMatI(dotProductNode(rank));
+            const int indexIStart = mClusterTree(nodeI, 2);
+            const int indexIEnd = mClusterTree(nodeI, 3);
+            const int workSizeI = indexIEnd - indexIStart;
+
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, workSizeI),
+                                 [&](const int i) {
+                                   double uNorm = 0.0;
+                                   for (int j = 0; j < 3; j++)
+                                     uNorm += pow(u(indexIStart + i, j), 2);
+                                   uNorm = sqrt(uNorm);
+                                   if (uNorm > 1e4)
+                                     uDotCheck(rank) = 1;
+                                 });
+          });
+      Kokkos::fence();
+
+      int dotCheckSum = 0;
+      Kokkos::parallel_reduce(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
+          KOKKOS_LAMBDA(const int rank, int &tDotCheck) {
+            if (uDotCheck(rank) == 1) {
+              tDotCheck += 1;
+            }
+          },
+          Kokkos::Sum<int>(dotCheckSum));
+
+      if (dotCheckSum > 0) {
+        std::cout << "uNorm is too large in rank: " << mMPIRank << std::endl;
+
+        DeviceIndexVector::HostMirror farMatIHost =
+            Kokkos::create_mirror_view(mFarMatI);
+        DeviceIndexVector::HostMirror farMatJHost =
+            Kokkos::create_mirror_view(mFarMatJ);
+        Kokkos::deep_copy(farMatIHost, mFarMatI);
+        Kokkos::deep_copy(farMatJHost, mFarMatJ);
+
+        DeviceIndexMatrix::HostMirror clusterTreeHost =
+            Kokkos::create_mirror_view(mClusterTree);
+        Kokkos::deep_copy(clusterTreeHost, mClusterTree);
+
+        DeviceIntVector::HostMirror dotCheckHost =
+            Kokkos::create_mirror_view(uDotCheck);
+        Kokkos::deep_copy(dotCheckHost, uDotCheck);
+
+        DeviceIntVector::HostMirror dotProductNodeHost =
+            Kokkos::create_mirror_view(dotProductNode);
+        Kokkos::deep_copy(dotProductNodeHost, dotProductNode);
+
+        for (int i = 0; i < dotSize; i++) {
+          if (dotCheckHost(i) == 1) {
+            std::cout
+                << "farMatI: " << farMatIHost(dotProductNodeHost(i))
+                << " row size: "
+                << clusterTreeHost(farMatIHost(dotProductNodeHost(i)), 3) -
+                       clusterTreeHost(farMatIHost(dotProductNodeHost(i)), 2)
+                << " farMatJ: " << farMatJHost(dotProductNodeHost(i))
+                << " col size: "
+                << clusterTreeHost(farMatJHost(dotProductNodeHost(i)), 3) -
+                       clusterTreeHost(farMatJHost(dotProductNodeHost(i)), 2)
+                << std::endl;
+          }
+        }
+      }
 
       auto end = std::chrono::steady_clock::now();
       dotDuration +=
