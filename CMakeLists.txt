@@ -9,6 +9,9 @@ find_package(Python REQUIRED COMPONENTS Interpreter Development)
 # find_package(TBB REQUIRED)
 find_package(MPI REQUIRED)
 
+include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/extern/eigen/)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem ${PROJECT_SOURCE_DIR}/extern/eigen/")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS off)
 
@@ -23,7 +26,7 @@ include_directories(
 )
 include_directories("${PROJECT_SOURCE_DIR}/eigen")
 
-add_compile_options(-O3 -w -fPIC -fopenmp -Wno-deprecated-gpu-targets)
+add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr -Wno-div-by-zero)
 
 # link/include
 file(GLOB_RECURSE sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
