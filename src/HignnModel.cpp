@@ -183,6 +183,7 @@ void HignnModel::BackwardReorder(const std::vector<size_t> &reorderedMap,
 HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
   // default values
   mPostCheckFlag = false;
+  mUseSymmetry = true;
 
   mMaxFarDotWorkNodeSize = 5000;
 
@@ -416,6 +417,9 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
   if (mMPIRank == 0)
     std::cout << "start of Dot" << std::endl;
 
+  std::chrono::high_resolution_clock::time_point t1 =
+      std::chrono::high_resolution_clock::now();
+
   auto shape = fArray.shape();
 
   DeviceDoubleMatrix u("u", shape[0], 3);
@@ -450,7 +454,7 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
   Reorder(mReorderedMap, f);
 
   CloseDot(u, f);
-  // FarDot(u, f);
+  FarDot(u, f);
 
   DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(u);
 
@@ -478,8 +482,13 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
       });
   Kokkos::fence();
 
+  std::chrono::high_resolution_clock::time_point t2 =
+      std::chrono::high_resolution_clock::now();
+  auto duration =
+      std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
   if (mMPIRank == 0)
-    std::cout << "end of Dot" << std::endl;
+    printf("End of Dot. Dot time: %.4fs\n", (double)duration / 1e6);
 }
 
 void HignnModel::UpdateCoord(pybind11::array_t<float> &coord) {
@@ -512,6 +521,10 @@ void HignnModel::SetMatPoolSizeFactor(const int factor) {
 
 void HignnModel::SetPostCheckFlag(const bool flag) {
   mPostCheckFlag = flag;
+}
+
+void HignnModel::SetUseSymmetryFlag(const bool flag) {
+  mUseSymmetry = flag;
 }
 
 void HignnModel::SetMaxFarDotWorkNodeSize(const int size) {

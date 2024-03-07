@@ -1,6 +1,7 @@
 #include "HignnModel.hpp"
 
 void HignnModel::CloseFarCheck() {
+  MPI_Barrier(MPI_COMM_WORLD);
   std::chrono::high_resolution_clock::time_point t1 =
       std::chrono::high_resolution_clock::now();
 
@@ -189,7 +190,27 @@ void HignnModel::CloseFarCheck() {
     for (int j = 0; j < colSize; j++) {
       int nodeJ = closeMat[nodeI][j];
       // consider the symmetry property
-      if (nodeJ >= nodeI) {
+      if (mUseSymmetry) {
+        if (nodeJ >= nodeI) {
+          if (totalClosePair % (size_t)mMPISize == (size_t)mMPIRank) {
+            int nodeSizeJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
+
+            leafNodeCounter++;
+
+            closeMatJ.push_back(nodeJ);
+
+            if (nodeI == nodeJ)
+              totalCloseEntry += nodeSizeI * nodeSizeJ;
+            else
+              totalCloseEntry += 2 * nodeSizeI * nodeSizeJ;
+
+            if (nodeSizeI * nodeSizeJ > mMaxCloseDotBlockSize)
+              mMaxCloseDotBlockSize = nodeSizeI * nodeSizeJ;
+          }
+
+          totalClosePair++;
+        }
+      } else {
         if (totalClosePair % (size_t)mMPISize == (size_t)mMPIRank) {
           int nodeSizeJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
 
@@ -273,14 +294,38 @@ void HignnModel::CloseFarCheck() {
   }
 
   // split far pair among mpi ranks
-  std::size_t farMatSize = totalFarSize / (std::size_t)mMPISize;
-  farMatSize +=
-      ((totalFarSize % (std::size_t)mMPISize) > (std::size_t)mMPIRank) ? 1 : 0;
+  std::vector<size_t> farMatI;
+  std::vector<size_t> farMatJ;
 
-  mFarMatIPtr = std::make_shared<DeviceIndexVector>("mFarMatI", farMatSize);
+  int counter = 0;
+  for (size_t i = 0; i < farMat.size(); i++) {
+    int nodeI = i;
+    for (size_t j = 0; j < farMat[i].size(); j++) {
+      int nodeJ = farMat[i][j];
+
+      // consider the symmetry property
+      if (mUseSymmetry) {
+        if (nodeJ >= nodeI) {
+          if (counter % (std::size_t)mMPISize == (std::size_t)mMPIRank) {
+            farMatI.push_back(nodeI);
+            farMatJ.push_back(nodeJ);
+          }
+          counter++;
+        }
+      } else {
+        if (counter % (std::size_t)mMPISize == (std::size_t)mMPIRank) {
+          farMatI.push_back(nodeI);
+          farMatJ.push_back(nodeJ);
+        }
+        counter++;
+      }
+    }
+  }
+
+  mFarMatIPtr = std::make_shared<DeviceIndexVector>("mFarMatI", farMatI.size());
   auto &mFarMatI = *mFarMatIPtr;
 
-  mFarMatJPtr = std::make_shared<DeviceIndexVector>("mFarMatJ", farMatSize);
+  mFarMatJPtr = std::make_shared<DeviceIndexVector>("mFarMatJ", farMatJ.size());
   auto &mFarMatJ = *mFarMatJPtr;
 
   DeviceIndexVector::HostMirror farMatIMirror =
@@ -288,17 +333,9 @@ void HignnModel::CloseFarCheck() {
   DeviceIndexVector::HostMirror farMatJMirror =
       Kokkos::create_mirror_view(mFarMatJ);
 
-  int counter = 0;
-  int matCounter = 0;
-  for (size_t i = 0; i < farMat.size(); i++) {
-    for (size_t j = 0; j < farMat[i].size(); j++) {
-      if (counter % (std::size_t)mMPISize == (std::size_t)mMPIRank) {
-        farMatIMirror(matCounter) = i;
-        farMatJMirror(matCounter) = farMat[i][j];
-        matCounter++;
-      }
-      counter++;
-    }
+  for (size_t i = 0; i < farMatI.size(); i++) {
+    farMatIMirror(i) = farMatI[i];
+    farMatJMirror(i) = farMatJ[i];
   }
 
   std::size_t farDotQueryNum = 0;
@@ -308,7 +345,7 @@ void HignnModel::CloseFarCheck() {
         mClusterTree(farMatIMirror(i), 3) - mClusterTree(farMatIMirror(i), 2);
     std::size_t nodeJSize =
         mClusterTree(farMatJMirror(i), 3) - mClusterTree(farMatJMirror(i), 2);
-    farDotQueryNum += nodeISize * nodeJSize;
+    farDotQueryNum += 2 * nodeISize * nodeJSize;
 
     if (nodeISize > maxSingleNodeSize)
       maxSingleNodeSize = nodeISize;
@@ -328,6 +365,7 @@ void HignnModel::CloseFarCheck() {
   Kokkos::deep_copy(mFarMatI, farMatIMirror);
   Kokkos::deep_copy(mFarMatJ, farMatJMirror);
 
+  MPI_Barrier(MPI_COMM_WORLD);
   std::chrono::high_resolution_clock::time_point t2 =
       std::chrono::high_resolution_clock::now();
   auto duration =

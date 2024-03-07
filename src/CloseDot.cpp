@@ -34,6 +34,8 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   auto &mClusterTree = *mClusterTreePtr;
   auto &mLeafNode = *mLeafNodePtr;
 
+  bool useSymmetry = mUseSymmetry;
+
   Kokkos::parallel_for(
       Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, leafNodeSize),
       KOKKOS_LAMBDA(const std::size_t i) { nodeOffset(i) = mCloseMatI(i); });
@@ -180,7 +182,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 }
               });
 
-          if (nodeJ > nodeI) {
+          if (nodeJ > nodeI && useSymmetry) {
             Kokkos::parallel_for(
                 Kokkos::TeamThreadRange(teamMember, workSizeI * workSizeJ),
                 [&](const std::size_t index) {

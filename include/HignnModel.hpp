@@ -83,6 +83,8 @@ protected:
 
   bool mPostCheckFlag;
 
+  bool mUseSymmetry;
+
 protected:
   std::size_t GetCount();
 
@@ -132,6 +134,8 @@ public:
   void SetMatPoolSizeFactor(const int factor);
 
   void SetPostCheckFlag(const bool flag);
+
+  void SetUseSymmetryFlag(const bool flag);
 
   void SetMaxFarDotWorkNodeSize(const int size);
 

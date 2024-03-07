@@ -64,7 +64,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   int cMatPoolUsedSize = 0;
   int qMatPoolUsedSize = 0;
   int allowedWorkload = 0;
-  int allowedWorkloadBasedOnMatPool = 0;
 
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       maxRelativeCoord * 3);
@@ -668,10 +667,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   double curNorm = 0.0;
                   const int index = qkOffset + j;
 
-                  // for (int k = 0; k < 9; k++) {
-                  //   curNorm += pow(qMatPool(index, k), 2);
-                  // }
-
                   const double a = qMatPool(index, 0);
                   const double b = qMatPool(index, 1);
                   const double c = qMatPool(index, 2);
@@ -957,6 +952,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     {
       auto start = std::chrono::steady_clock::now();
 
+      // stage 1
       const int dotSize = workNodeSize - newWorkNodeSize;
       Kokkos::parallel_for(
           Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
@@ -1016,11 +1012,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
-          KOKKOS_LAMBDA(const int rank) { uDotCheck(rank) = 0; });
-      Kokkos::fence();
-
-      Kokkos::parallel_for(
           Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
                                                             Kokkos::AUTO()),
           KOKKOS_LAMBDA(
@@ -1056,6 +1047,91 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           });
       Kokkos::fence();
 
+      // stage 2, consider the symmetry property
+      if (mUseSymmetry) {
+        Kokkos::parallel_for(
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+                0, innerNumIter * dotSize * 3),
+            KOKKOS_LAMBDA(const int i) { middleMatPool(i) = 0.0; });
+        Kokkos::fence();
+
+        Kokkos::parallel_for(
+            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
+                                                              Kokkos::AUTO()),
+            KOKKOS_LAMBDA(
+                const Kokkos::TeamPolicy<
+                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
+              const int rank = teamMember.league_rank();
+              const int workingNodeRank = dotProductRank(rank);
+
+              const int nodeI = mFarMatI(workingNode(workingNodeRank));
+              const int indexIStart = mClusterTree(nodeI, 2);
+              const int indexIEnd = mClusterTree(nodeI, 3);
+              const int workSizeI = indexIEnd - indexIStart;
+
+              Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
+                  [&](const int i) {
+                    const int iter = i / 3;
+                    const int row = i % 3;
+
+                    const int ckOffset =
+                        workingNodeCMatOffset(workingNodeRank, iter);
+                    const int middleMatOffset = 3 * innerNumIter * rank;
+
+                    double sum = 0.0;
+                    for (int j = 0; j < workSizeI; j++)
+                      for (int k = 0; k < 3; k++)
+                        sum += cMatPool(ckOffset + j, k * 3 + row) *
+                               f(indexIStart + j, k);
+                    middleMatPool(middleMatOffset + i) = sum;
+                  });
+            });
+        Kokkos::fence();
+
+        Kokkos::parallel_for(
+            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
+                                                              Kokkos::AUTO()),
+            KOKKOS_LAMBDA(
+                const Kokkos::TeamPolicy<
+                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
+              const int rank = teamMember.league_rank();
+              const int workingNodeRank = dotProductRank(rank);
+
+              const int nodeJ = mFarMatJ(dotProductNode(rank));
+              const int indexJStart = mClusterTree(nodeJ, 2);
+              const int indexJEnd = mClusterTree(nodeJ, 3);
+              const int workSizeJ = indexJEnd - indexJStart;
+
+              Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(teamMember,
+                                          workSizeJ * innerNumIter * 3),
+                  [&](const int i) {
+                    const int index = i / (3 * innerNumIter);
+                    const int row = (i % (3 * innerNumIter)) / innerNumIter;
+                    const int iter = (i % (3 * innerNumIter)) % innerNumIter;
+
+                    double sum = 0.0;
+                    const int qMatOffset =
+                        workingNodeQMatOffset(workingNodeRank, iter);
+                    const int middleMatOffset = 3 * innerNumIter * rank;
+
+                    for (int k = 0; k < 3; k++)
+                      sum += qMatPool(qMatOffset + index, k * 3 + row) *
+                             middleMatPool(middleMatOffset + 3 * iter + k);
+
+                    Kokkos::atomic_add(&u(indexJStart + index, row), sum);
+                  });
+            });
+        Kokkos::fence();
+      }
+
+      // post check
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
+          KOKKOS_LAMBDA(const int rank) { uDotCheck(rank) = 0; });
+      Kokkos::fence();
+
       Kokkos::parallel_for(
           Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
                                                             Kokkos::AUTO()),
@@ -1076,7 +1152,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                                    for (int j = 0; j < 3; j++)
                                      uNorm += pow(u(indexIStart + i, j), 2);
                                    uNorm = sqrt(uNorm);
-                                   if (uNorm > 1e4)
+                                   if (uNorm > 1e6)
                                      uDotCheck(rank) = 1;
                                  });
           });
