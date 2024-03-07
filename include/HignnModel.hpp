@@ -72,7 +72,7 @@ protected:
   int mMatPoolSizeFactor;
 
   int mMaxFarDotWorkNodeSize;
-  int mMaxCloseDotWorkNodeSize;
+  int mMaxCloseDotBlockSize;
 
   size_t mMaxRelativeCoord;
 
@@ -134,8 +134,6 @@ public:
   void SetPostCheckFlag(const bool flag);
 
   void SetMaxFarDotWorkNodeSize(const int size);
-
-  void SetMaxCloseDotWorkNodeSize(const int size);
 
   void SetMaxRelativeCoord(const size_t size);
 

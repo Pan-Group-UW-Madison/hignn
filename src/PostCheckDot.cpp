@@ -33,8 +33,8 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   const std::size_t leafNodeSize = leafNodeEnd - leafNodeStart;
 
-  const std::size_t maxWorkSize =
-      std::min<std::size_t>(leafNodeSize, mMaxCloseDotWorkNodeSize);
+  const std::size_t maxWorkSize = std::min<std::size_t>(
+      leafNodeSize, mMaxRelativeCoord / (mBlockSize * mBlockSize));
   int workSize = maxWorkSize;
 
   std::size_t totalNumQuery = 0;

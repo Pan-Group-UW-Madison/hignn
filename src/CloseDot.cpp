@@ -8,16 +8,15 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   double dotDuration = 0;
 
   const int leafNodeSize = mLeafNodePtr->extent(0);
-  const int maxWorkSize = mMaxCloseDotWorkNodeSize;
+  const int maxWorkSize = mMaxRelativeCoord / mMaxCloseDotBlockSize;
   int workSize = std::min(maxWorkSize, leafNodeSize);
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
 
-  DeviceFloatVector relativeCoordPool(
-      "relativeCoordPool", maxWorkSize * mBlockSize * mBlockSize * 3);
-  DeviceFloatMatrix queryResultPool("queryResultPool",
-                                    maxWorkSize * mBlockSize * mBlockSize, 3);
+  DeviceFloatVector relativeCoordPool("relativeCoordPool",
+                                      mMaxRelativeCoord * 3);
+  DeviceFloatMatrix queryResultPool("queryResultPool", mMaxRelativeCoord, 3);
 
   DeviceIntVector workingNode("workingNode", maxWorkSize);
   DeviceIntVector workingNodeOffset("workingNodeOffset", maxWorkSize);
@@ -47,7 +46,6 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       });
   Kokkos::fence();
 
-  const int blockSize = mBlockSize;
   int workingFlagSum = workSize;
   while (workSize > 0) {
     totalNumIter++;
@@ -59,7 +57,6 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           const int node = workingNode(rank);
           const int nodeI = mLeafNode(node);
           const int nodeJ = mCloseMatJ(nodeOffset(node));
-          const int relativeOffset = rank * blockSize * blockSize;
 
           const int indexIStart = mClusterTree(nodeI, 2);
           const int indexIEnd = mClusterTree(nodeI, 3);
@@ -182,6 +179,23 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   Kokkos::atomic_add(&u(indexIStart + j, row), sum);
                 }
               });
+
+          if (nodeJ > nodeI) {
+            Kokkos::parallel_for(
+                Kokkos::TeamThreadRange(teamMember, workSizeI * workSizeJ),
+                [&](const std::size_t index) {
+                  const std::size_t j = index / workSizeJ;
+                  const std::size_t k = index % workSizeJ;
+                  for (int row = 0; row < 3; row++) {
+                    double sum = 0.0;
+                    for (int col = 0; col < 3; col++)
+                      sum += dataPtr[9 * (relativeOffset + index) + row * 3 +
+                                     col] *
+                             f(indexIStart + j, col);
+                    Kokkos::atomic_add(&u(indexJStart + k, row), sum);
+                  }
+                });
+          }
         });
     Kokkos::fence();
 

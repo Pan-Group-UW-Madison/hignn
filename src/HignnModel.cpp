@@ -185,7 +185,6 @@ HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
   mPostCheckFlag = false;
 
   mMaxFarDotWorkNodeSize = 5000;
-  mMaxCloseDotWorkNodeSize = 50;
 
   mMaxRelativeCoord = 500000;
 
@@ -258,77 +257,85 @@ void HignnModel::Build() {
     std::cout << "start of Build" << std::endl;
 
   Kokkos::deep_copy(*mCoordMirrorPtr, *mCoordPtr);
-
-  std::queue<std::size_t> nodeList;
-
-  nodeList.emplace(0);
-
-  std::size_t estimatedSize = GetCount();
-
   HostIndexMatrix mClusterTree;
-  Kokkos::resize(mClusterTree, estimatedSize, 5);
-
-  for (size_t i = 0; i < mClusterTree.extent(0); i++)
-    for (size_t j = 0; j < mClusterTree.extent(1); j++)
-      mClusterTree(i, j) = 0;
 
   mReorderedMap.resize(GetCount());
-  for (std::size_t i = 0; i < GetCount(); i++)
-    mReorderedMap[i] = i;
 
-  mClusterTree(0, 2) = 0;
-  mClusterTree(0, 3) = GetCount();
-  mClusterTree(0, 4) = 0;
+  if (mMPIRank == 0) {
+    std::queue<std::size_t> nodeList;
 
-  int newNodeNum = 1;
+    nodeList.emplace(0);
 
-  std::vector<std::size_t> nodeDividend(10);
-  std::vector<std::size_t> selectedNode(10);
+    std::size_t estimatedSize = GetCount();
+    Kokkos::resize(mClusterTree, estimatedSize, 5);
 
-  while (nodeList.size() > 0) {
-    int numSelectedNode = std::min((std::size_t)10, nodeList.size());
-    for (int i = 0; i < numSelectedNode; i++) {
-      selectedNode[i] = nodeList.front();
-      nodeList.pop();
-    }
+    for (size_t i = 0; i < mClusterTree.extent(0); i++)
+      for (size_t j = 0; j < mClusterTree.extent(1); j++)
+        mClusterTree(i, j) = 0;
+
+    for (std::size_t i = 0; i < GetCount(); i++)
+      mReorderedMap[i] = i;
+
+    mClusterTree(0, 2) = 0;
+    mClusterTree(0, 3) = GetCount();
+    mClusterTree(0, 4) = 0;
+
+    int newNodeNum = 1;
+
+    std::vector<std::size_t> nodeDividend(10);
+    std::vector<std::size_t> selectedNode(10);
+
+    while (nodeList.size() > 0) {
+      int numSelectedNode = std::min((std::size_t)10, nodeList.size());
+      for (int i = 0; i < numSelectedNode; i++) {
+        selectedNode[i] = nodeList.front();
+        nodeList.pop();
+      }
 
 #pragma omp parallel for schedule(dynamic)
-    for (int i = 0; i < numSelectedNode; i++) {
-      size_t node = selectedNode[i];
+      for (int i = 0; i < numSelectedNode; i++) {
+        size_t node = selectedNode[i];
 
-      if ((mClusterTree(node, 3) - mClusterTree(node, 2)) > mBlockSize) {
-        nodeDividend[i] = Divide(mClusterTree(node, 2), mClusterTree(node, 3),
-                                 mClusterTree(node, 4) % 3, mReorderedMap);
-      } else {
-        nodeDividend[i] = 0;
+        if ((mClusterTree(node, 3) - mClusterTree(node, 2)) > mBlockSize) {
+          nodeDividend[i] = Divide(mClusterTree(node, 2), mClusterTree(node, 3),
+                                   mClusterTree(node, 4) % 3, mReorderedMap);
+        } else {
+          nodeDividend[i] = 0;
+        }
+      }
+
+      for (int i = 0; i < numSelectedNode; i++) {
+        auto node = selectedNode[i];
+
+        if (nodeDividend[i] == 0) {
+          mClusterTree(node, 0) = 0;
+          mClusterTree(node, 1) = 0;
+        } else {
+          mClusterTree(node, 0) = newNodeNum++;
+          mClusterTree(node, 1) = newNodeNum++;
+
+          mClusterTree(mClusterTree(node, 0), 2) = mClusterTree(node, 2);
+          mClusterTree(mClusterTree(node, 0), 3) = nodeDividend[i];
+          mClusterTree(mClusterTree(node, 1), 2) = nodeDividend[i];
+          mClusterTree(mClusterTree(node, 1), 3) = mClusterTree(node, 3);
+
+          mClusterTree(mClusterTree(node, 0), 4) = mClusterTree(node, 4) + 1;
+          mClusterTree(mClusterTree(node, 1), 4) = mClusterTree(node, 4) + 1;
+
+          nodeList.push(mClusterTree(node, 0));
+          nodeList.push(mClusterTree(node, 1));
+        }
       }
     }
 
-    for (int i = 0; i < numSelectedNode; i++) {
-      auto node = selectedNode[i];
+    mClusterTreeSize = newNodeNum;
 
-      if (nodeDividend[i] == 0) {
-        mClusterTree(node, 0) = 0;
-        mClusterTree(node, 1) = 0;
-      } else {
-        mClusterTree(node, 0) = newNodeNum++;
-        mClusterTree(node, 1) = newNodeNum++;
-
-        mClusterTree(mClusterTree(node, 0), 2) = mClusterTree(node, 2);
-        mClusterTree(mClusterTree(node, 0), 3) = nodeDividend[i];
-        mClusterTree(mClusterTree(node, 1), 2) = nodeDividend[i];
-        mClusterTree(mClusterTree(node, 1), 3) = mClusterTree(node, 3);
-
-        mClusterTree(mClusterTree(node, 0), 4) = mClusterTree(node, 4) + 1;
-        mClusterTree(mClusterTree(node, 1), 4) = mClusterTree(node, 4) + 1;
-
-        nodeList.push(mClusterTree(node, 0));
-        nodeList.push(mClusterTree(node, 1));
-      }
-    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Bcast(&mClusterTreeSize, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Bcast(&mClusterTreeSize, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
   }
-
-  mClusterTreeSize = newNodeNum;
 
   mClusterTreePtr = std::make_shared<DeviceIndexMatrix>(
       DeviceIndexMatrix("mClusterTreePtr", mClusterTreeSize, 5));
@@ -337,9 +344,17 @@ void HignnModel::Build() {
 
   auto &hostClusterTree = *mClusterTreeMirrorPtr;
 
-  for (size_t i = 0; i < mClusterTreeSize; i++)
-    for (size_t j = 0; j < mClusterTree.extent(1); j++)
-      hostClusterTree(i, j) = mClusterTree(i, j);
+  if (mMPIRank == 0) {
+    for (size_t i = 0; i < mClusterTreeSize; i++)
+      for (size_t j = 0; j < 5; j++)
+        hostClusterTree(i, j) = mClusterTree(i, j);
+  }
+
+  MPI_Bcast(hostClusterTree.data(), mClusterTreeSize * 5, MPI_UNSIGNED_LONG, 0,
+            MPI_COMM_WORLD);
+  MPI_Bcast(mReorderedMap.data(), mReorderedMap.size(), MPI_UNSIGNED_LONG, 0,
+            MPI_COMM_WORLD);
+  MPI_Barrier(MPI_COMM_WORLD);
 
   Kokkos::deep_copy(*mClusterTreePtr, hostClusterTree);
 
@@ -435,7 +450,7 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
   Reorder(mReorderedMap, f);
 
   CloseDot(u, f);
-  FarDot(u, f);
+  // FarDot(u, f);
 
   DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(u);
 
@@ -501,10 +516,6 @@ void HignnModel::SetPostCheckFlag(const bool flag) {
 
 void HignnModel::SetMaxFarDotWorkNodeSize(const int size) {
   mMaxFarDotWorkNodeSize = size;
-}
-
-void HignnModel::SetMaxCloseDotWorkNodeSize(const int size) {
-  mMaxCloseDotWorkNodeSize = size;
 }
 
 void HignnModel::SetMaxRelativeCoord(const size_t size) {

@@ -174,125 +174,90 @@ void HignnModel::CloseFarCheck() {
   }
 
   // split leaf node among mpi ranks
-  std::size_t leafNodeStart, leafNodeStartI = 0, leafNodeStartJ = 0;
-  std::size_t leafNodeEnd, leafNodeEndI = 0, leafNodeEndJ = 0;
-
-  std::size_t totalCloseMatSize = 0;
-  for (size_t i = 0; i < mLeafNodeList.size(); i++)
-    totalCloseMatSize += closeMat[mLeafNodeList[i]].size();
-
-  std::size_t estimatedLeafNodeSize =
-      std::ceil((double)totalCloseMatSize / mMPISize);
-  leafNodeStart = estimatedLeafNodeSize * mMPIRank;
-  leafNodeEnd =
-      std::min(estimatedLeafNodeSize * (mMPIRank + 1), totalCloseMatSize);
-
-  unsigned int counter = 0;
+  size_t totalCloseEntry = 0;
+  size_t totalClosePair = 0;
+  std::vector<size_t> leafNode;
+  std::vector<size_t> closeMatI;
+  std::vector<size_t> closeMatJ;
+  closeMatI.push_back(0);
+  mMaxCloseDotBlockSize = 0;
   for (size_t i = 0; i < mLeafNodeList.size(); i++) {
-    counter += closeMat[mLeafNodeList[i]].size();
-    if (leafNodeStart <= counter) {
-      leafNodeStartI = i;
-      leafNodeStartJ =
-          leafNodeStart - (counter - closeMat[mLeafNodeList[i]].size());
-      break;
+    int nodeI = mLeafNodeList[i];
+    int nodeSizeI = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
+    int colSize = closeMat[mLeafNodeList[i]].size();
+    int leafNodeCounter = 0;
+    for (int j = 0; j < colSize; j++) {
+      int nodeJ = closeMat[nodeI][j];
+      // consider the symmetry property
+      if (nodeJ >= nodeI) {
+        if (totalClosePair % (size_t)mMPISize == (size_t)mMPIRank) {
+          int nodeSizeJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
+
+          leafNodeCounter++;
+
+          closeMatJ.push_back(nodeJ);
+
+          if (nodeI == nodeJ)
+            totalCloseEntry += nodeSizeI * nodeSizeJ;
+          else
+            totalCloseEntry += 2 * nodeSizeI * nodeSizeJ;
+
+          if (nodeSizeI * nodeSizeJ > mMaxCloseDotBlockSize)
+            mMaxCloseDotBlockSize = nodeSizeI * nodeSizeJ;
+        }
+
+        totalClosePair++;
+      }
+    }
+
+    if (leafNodeCounter != 0) {
+      leafNode.push_back(nodeI);
+      closeMatI.push_back(closeMatI.back() + leafNodeCounter);
     }
   }
 
-  counter = 0;
-  for (size_t i = 0; i < mLeafNodeList.size(); i++) {
-    counter += closeMat[mLeafNodeList[i]].size();
-    if (leafNodeEnd <= counter) {
-      leafNodeEndI = i;
-      leafNodeEndJ =
-          leafNodeEnd - (counter - closeMat[mLeafNodeList[i]].size());
-      break;
-    }
-  }
-
-  if (closeMat[mLeafNodeList[leafNodeStartI]].size() == leafNodeStartJ) {
-    leafNodeStartI++;
-    leafNodeStartJ = 0;
-  }
-
-  std::size_t leafNodeSize = leafNodeEndI - leafNodeStartI + 1;
-
-  mLeafNodePtr = std::make_shared<DeviceIndexVector>("mLeafNode", leafNodeSize);
-
+  mLeafNodePtr =
+      std::make_shared<DeviceIndexVector>("mLeafNode", leafNode.size());
+  auto &mLeafNode = *mLeafNodePtr;
   DeviceIndexVector::HostMirror hostLeafNode =
       Kokkos::create_mirror_view(*mLeafNodePtr);
 
-  auto &mLeafNode = *mLeafNodePtr;
-
-  for (size_t i = 0; i < leafNodeSize; i++)
-    hostLeafNode(i) = mLeafNodeList[i + leafNodeStartI];
-  Kokkos::deep_copy(mLeafNode, hostLeafNode);
+  for (size_t i = 0; i < leafNode.size(); i++) {
+    hostLeafNode(i) = leafNode[i];
+  }
 
   mCloseMatIPtr =
-      std::make_shared<DeviceIndexVector>("mCloseMatI", leafNodeSize + 1);
+      std::make_shared<DeviceIndexVector>("mCloseMatI", closeMatI.size());
   auto &mCloseMatI = *mCloseMatIPtr;
-  Kokkos::resize(*mCloseMatIPtr, leafNodeSize + 1);
-
   DeviceIndexVector::HostMirror hostCloseMatI =
       Kokkos::create_mirror_view(*mCloseMatIPtr);
-  hostCloseMatI(0) = 0;
-  for (size_t i = 0; i < leafNodeSize; i++) {
-    if (i == 0)
-      hostCloseMatI(i + 1) =
-          closeMat[mLeafNodeList[i + leafNodeStartI]].size() - leafNodeStartJ;
-    else if (i == leafNodeSize - 1)
-      hostCloseMatI(i + 1) = hostCloseMatI(i) + leafNodeEndJ;
-    else
-      hostCloseMatI(i + 1) =
-          hostCloseMatI(i) + closeMat[mLeafNodeList[i + leafNodeStartI]].size();
+
+  for (size_t i = 0; i < closeMatI.size(); i++) {
+    hostCloseMatI(i) = closeMatI[i];
   }
 
-  mCloseMatJPtr = std::make_shared<DeviceIndexVector>();
+  mCloseMatJPtr =
+      std::make_shared<DeviceIndexVector>("mCloseMatJ", closeMatJ.size());
   auto &mCloseMatJ = *mCloseMatJPtr;
-  Kokkos::resize(*mCloseMatJPtr, hostCloseMatI(leafNodeSize));
-
   DeviceIndexVector::HostMirror hostCloseMatJ =
       Kokkos::create_mirror_view(*mCloseMatJPtr);
-  for (size_t i = 0; i < leafNodeSize; i++) {
-    if (i == 0)
-      for (size_t j = leafNodeStartJ;
-           j < closeMat[mLeafNodeList[i + leafNodeStartI]].size(); j++)
-        hostCloseMatJ(hostCloseMatI(i) + j - leafNodeStartJ) =
-            closeMat[mLeafNodeList[i + leafNodeStartI]][j];
-    else if (i == leafNodeSize - 1)
-      for (size_t j = 0; j < leafNodeEndJ; j++)
-        hostCloseMatJ(hostCloseMatI(i) + j) =
-            closeMat[mLeafNodeList[i + leafNodeStartI]][j];
-    else
-      for (size_t j = 0; j < closeMat[mLeafNodeList[i + leafNodeStartI]].size();
-           j++)
-        hostCloseMatJ(hostCloseMatI(i) + j) =
-            closeMat[mLeafNodeList[i + leafNodeStartI]][j];
+
+  for (size_t i = 0; i < closeMatJ.size(); i++) {
+    hostCloseMatJ(i) = closeMatJ[i];
   }
 
-  int totalClosePair = hostCloseMatI(leafNodeSize);
-  MPI_Allreduce(MPI_IN_PLACE, &totalClosePair, 1, MPI_INT, MPI_SUM,
+  MPI_Allreduce(MPI_IN_PLACE, &totalCloseEntry, 1, MPI_UNSIGNED_LONG, MPI_SUM,
                 MPI_COMM_WORLD);
 
   if (mMPIRank == 0)
     std::cout << "Total close pair: " << totalClosePair << std::endl;
-
-  std::size_t totalCloseEntry = 0;
-  for (size_t i = 0; i < mLeafNodeList.size(); i++) {
-    size_t nodeI = mLeafNodeList[i];
-    size_t nodeSizeI = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
-    for (size_t j = 0; j < closeMat[nodeI].size(); j++) {
-      size_t nodeJ = closeMat[nodeI][j];
-      size_t nodeSizeJ = mClusterTree(nodeJ, 3) - mClusterTree(nodeJ, 2);
-
-      totalCloseEntry += nodeSizeI * nodeSizeJ;
-    }
-  }
 
   if (mMPIRank == 0)
     std::cout << "Total close entry: " << totalCloseEntry << std::endl;
 
   Kokkos::deep_copy(mCloseMatI, hostCloseMatI);
   Kokkos::deep_copy(mCloseMatJ, hostCloseMatJ);
+  Kokkos::deep_copy(mLeafNode, hostLeafNode);
 
   std::size_t totalFarSize = 0;
   std::size_t totalFarNode = 0;
@@ -323,7 +288,7 @@ void HignnModel::CloseFarCheck() {
   DeviceIndexVector::HostMirror farMatJMirror =
       Kokkos::create_mirror_view(mFarMatJ);
 
-  counter = 0;
+  int counter = 0;
   int matCounter = 0;
   for (size_t i = 0; i < farMat.size(); i++) {
     for (size_t j = 0; j < farMat[i].size(); j++) {
