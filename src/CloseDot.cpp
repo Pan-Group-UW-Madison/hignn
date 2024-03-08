@@ -1,6 +1,8 @@
 #include "HignnModel.hpp"
 
 void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+  std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+
   if (mMPIRank == 0)
     std::cout << "start of CloseDot" << std::endl;
 
@@ -182,22 +184,23 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 }
               });
 
-          if (nodeJ > nodeI && useSymmetry) {
-            Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember, workSizeI * workSizeJ),
-                [&](const std::size_t index) {
-                  const std::size_t j = index / workSizeJ;
-                  const std::size_t k = index % workSizeJ;
-                  for (int row = 0; row < 3; row++) {
-                    double sum = 0.0;
-                    for (int col = 0; col < 3; col++)
-                      sum += dataPtr[9 * (relativeOffset + index) + row * 3 +
-                                     col] *
-                             f(indexIStart + j, col);
-                    Kokkos::atomic_add(&u(indexJStart + k, row), sum);
-                  }
-                });
-          }
+          if (useSymmetry)
+            if (nodeJ > nodeI) {
+              Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(teamMember, workSizeI * workSizeJ),
+                  [&](const std::size_t index) {
+                    const std::size_t j = index / workSizeJ;
+                    const std::size_t k = index % workSizeJ;
+                    for (int row = 0; row < 3; row++) {
+                      double sum = 0.0;
+                      for (int col = 0; col < 3; col++)
+                        sum += dataPtr[9 * (relativeOffset + index) + row * 3 +
+                                       col] *
+                               f(indexIStart + j, col);
+                      Kokkos::atomic_add(&u(indexJStart + k, row), sum);
+                    }
+                  });
+            }
         });
     Kokkos::fence();
 
@@ -275,11 +278,16 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   MPI_Allreduce(MPI_IN_PLACE, &dotDuration, 1, MPI_DOUBLE, MPI_MAX,
                 MPI_COMM_WORLD);
 
+  std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+
   if (mMPIRank == 0) {
     printf(
         "num query: %ld, num iteration: %ld, query duration: %.4fs, dot "
         "duration: %.4fs\n",
         totalNumQuery, totalNumIter, queryDuration / 1e6, dotDuration / 1e6);
-    std::cout << "end of CloseDot" << std::endl;
+    printf(
+        "End of close dot. Dot time %.4fs\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() /
+            1e6);
   }
 }

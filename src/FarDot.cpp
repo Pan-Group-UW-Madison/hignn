@@ -40,6 +40,8 @@ struct reduction_identity<ArrReduce> {
 #define FarDotVelocityCheck
 
 void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
+  std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+
   if (mMPIRank == 0)
     std::cout << "start of FarDot" << std::endl;
   MPI_Barrier(MPI_COMM_WORLD);
@@ -49,6 +51,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   double ckNormalizationDuration = 0.0;
   double qkNormalizationDuration = 0.0;
   double stopCriterionDuration = 0.0;
+  double resetDuration = 0.0;
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
@@ -119,6 +122,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   while (!farDotFinished) {
     totalNumIter++;
     innerNumIter++;
+
     // select working node
     if (workNodeSize == 0) {
       allowedWorkload = maxRelativeCoord;
@@ -188,6 +192,9 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     }
 
     {
+      std::chrono::steady_clock::time_point begin =
+          std::chrono::steady_clock::now();
+
       // calculate relative coord for C
       totalCoord = 0;
       Kokkos::parallel_reduce(
@@ -260,16 +267,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      std::chrono::steady_clock::time_point begin =
-          std::chrono::steady_clock::now();
-
       auto resultTensor = mTwoBodyModel.forward(inputs).toTensor();
-
-      std::chrono::steady_clock::time_point end =
-          std::chrono::steady_clock::now();
-      queryDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
 
       // copy result to CMat
       auto dataPtr = resultTensor.data_ptr<float>();
@@ -301,6 +299,12 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       cMatPoolUsedSize += totalCoord;
+
+      std::chrono::steady_clock::time_point end =
+          std::chrono::steady_clock::now();
+      queryDuration +=
+          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
+              .count();
     }
 
     // find index for QMat
@@ -482,6 +486,9 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     }
 
     {
+      std::chrono::steady_clock::time_point begin =
+          std::chrono::steady_clock::now();
+
       // calculate relative coord for Q
       totalCoord = 0;
       Kokkos::parallel_reduce(
@@ -554,16 +561,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       std::vector<c10::IValue> inputs;
       inputs.push_back(relativeCoordTensor);
 
-      std::chrono::steady_clock::time_point begin =
-          std::chrono::steady_clock::now();
-
       auto resultTensor = mTwoBodyModel.forward(inputs).toTensor();
-
-      std::chrono::steady_clock::time_point end =
-          std::chrono::steady_clock::now();
-      queryDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
-              .count();
 
       // copy result to QMat
       auto dataPtr = resultTensor.data_ptr<float>();
@@ -595,6 +593,12 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       qMatPoolUsedSize += totalCoord;
+
+      std::chrono::steady_clock::time_point end =
+          std::chrono::steady_clock::now();
+      queryDuration +=
+          std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
+              .count();
     }
 
     // find index for CMat
@@ -872,11 +876,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           });
       Kokkos::fence();
 
-      auto end = std::chrono::steady_clock::now();
-      stopCriterionDuration +=
-          std::chrono::duration_cast<std::chrono::microseconds>(end - start)
-              .count();
-
       {
         int iterationCheckResult = 0;
         Kokkos::parallel_reduce(
@@ -936,6 +935,11 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           }
         }
       }
+
+      auto end = std::chrono::steady_clock::now();
+      stopCriterionDuration +=
+          std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+              .count();
     }
 
     int newWorkNodeSize = 0;
@@ -1225,6 +1229,8 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
       innerNumIter = 0;
     } else if (newWorkNodeSize < workNodeSize) {
+      auto start = std::chrono::steady_clock::now();
+
       finishedNodeSize += workNodeSize - newWorkNodeSize;
       // copy working node arrays
       Kokkos::parallel_for(
@@ -1363,12 +1369,19 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       workNodeSize = newWorkNodeSize;
+
+      auto end = std::chrono::steady_clock::now();
+      resetDuration +=
+          std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+              .count();
     }
 
     if (finishedNodeSize == farNodeSize) {
       break;
     }
   }
+
+  std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
 
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &totalNumQuery, 1, MPI_UNSIGNED_LONG, MPI_SUM,
@@ -1385,11 +1398,14 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         totalNumQuery, totalNumIter, queryDuration / 1e6, dotDuration / 1e6);
     printf(
         "ck normalization duration: %.4fs, qk normalization duration: %.4fs, "
-        "stop criterion duration: %.4fs\n",
+        "stop criterion duration: %.4fs, reset duration: %.4fs\n",
         ckNormalizationDuration / 1e6, qkNormalizationDuration / 1e6,
-        stopCriterionDuration / 1e6);
+        stopCriterionDuration / 1e6, resetDuration / 1e6);
     printf("max inner num iter: %d\n", maxInnerNumIter);
 
-    std::cout << "end of FarDot" << std::endl;
+    printf(
+        "End of far dot. Dot time %.4fs\n",
+        std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() /
+            1e6);
   }
 }
