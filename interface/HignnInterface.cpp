@@ -23,7 +23,6 @@ PYBIND11_MODULE(hignn, m) {
       .def("SetPostCheckFlag", &HignnModel::SetPostCheckFlag)
       .def("SetUseSymmetryFlag", &HignnModel::SetUseSymmetryFlag)
       .def("SetMaxFarFieldDistance", &HignnModel::SetMaxFarFieldDistance)
-      .def("Update", &HignnModel::Update)
       .def("UpdateCoord", &HignnModel::UpdateCoord)
       .def("Dot", &HignnModel::Dot);
 

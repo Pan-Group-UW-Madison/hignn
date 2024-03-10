@@ -19,35 +19,36 @@ void HignnModel::CloseFarCheck() {
   for (size_t i = 0; i < mAux.extent(0); i++)
     mAux(i, 0) = -std::numeric_limits<float>::max();
 
+  int initialLevel = floor(log(mMPISize) / log(2));
+  int initialNodeSize = pow(2, initialLevel + 1) - 1;
+  int maxWorkSize = pow(2, initialLevel);
+
   // go over all nodes, calculate aux based on the tree structure.
-  std::stack<std::size_t> workStack;
-  workStack.push(0);
-  while (workStack.size() != 0) {
-    auto node = workStack.top();
-    if (mClusterTree(node, 0) != 0) {
-      // check if child nodes have calculated aux.
-      if (mAux(mClusterTree(node, 0), 0) ==
-          -std::numeric_limits<float>::max()) {
+  // parallel stage
+  if (mMPIRank < maxWorkSize) {
+    std::stack<std::size_t> workStack;
+    std::vector<std::size_t> computeAuxStack;
+
+    int startNode = pow(2, initialLevel) - 1 + mMPIRank;
+    workStack.push(startNode);
+
+    while (workStack.size() != 0) {
+      auto node = workStack.top();
+
+      workStack.pop();
+
+      if (mClusterTree(node, 0) != 0) {
         workStack.push(mClusterTree(node, 0));
         workStack.push(mClusterTree(node, 1));
-        continue;
       } else {
-        mAux(node, 0) = std::min(mAux(mClusterTree(node, 0), 0),
-                                 mAux(mClusterTree(node, 1), 0));
-        mAux(node, 1) = std::max(mAux(mClusterTree(node, 0), 1),
-                                 mAux(mClusterTree(node, 1), 1));
-        mAux(node, 2) = std::min(mAux(mClusterTree(node, 0), 2),
-                                 mAux(mClusterTree(node, 1), 2));
-        mAux(node, 3) = std::max(mAux(mClusterTree(node, 0), 3),
-                                 mAux(mClusterTree(node, 1), 3));
-        mAux(node, 4) = std::min(mAux(mClusterTree(node, 0), 4),
-                                 mAux(mClusterTree(node, 1), 4));
-        mAux(node, 5) = std::max(mAux(mClusterTree(node, 0), 5),
-                                 mAux(mClusterTree(node, 1), 5));
-
-        workStack.pop();
+        computeAuxStack.push_back(node);
       }
-    } else {
+    }
+
+#pragma omp parallel for schedule(dynamic, 10)
+    for (size_t i = 0; i < computeAuxStack.size(); i++) {
+      auto node = computeAuxStack[i];
+
       std::vector<float> aux(6);
       ComputeAux(mClusterTree(node, 2), mClusterTree(node, 3), aux);
 
@@ -57,10 +58,116 @@ void HignnModel::CloseFarCheck() {
       mAux(node, 3) = aux[3];
       mAux(node, 4) = aux[4];
       mAux(node, 5) = aux[5];
+    }
 
-      workStack.pop();
+    workStack.push(startNode);
+    while (workStack.size() != 0) {
+      auto node = workStack.top();
+      if (mClusterTree(node, 0) != 0) {
+        // check if child nodes have calculated aux.
+        bool canContinue = false;
+        if (mAux(mClusterTree(node, 0), 0) ==
+            -std::numeric_limits<float>::max()) {
+          workStack.push(mClusterTree(node, 0));
+
+          canContinue = true;
+        }
+
+        if (mAux(mClusterTree(node, 1), 0) ==
+            -std::numeric_limits<float>::max()) {
+          workStack.push(mClusterTree(node, 1));
+
+          canContinue = true;
+        }
+
+        if (!canContinue) {
+          mAux(node, 0) = std::min(mAux(mClusterTree(node, 0), 0),
+                                   mAux(mClusterTree(node, 1), 0));
+          mAux(node, 1) = std::max(mAux(mClusterTree(node, 0), 1),
+                                   mAux(mClusterTree(node, 1), 1));
+          mAux(node, 2) = std::min(mAux(mClusterTree(node, 0), 2),
+                                   mAux(mClusterTree(node, 1), 2));
+          mAux(node, 3) = std::max(mAux(mClusterTree(node, 0), 3),
+                                   mAux(mClusterTree(node, 1), 3));
+          mAux(node, 4) = std::min(mAux(mClusterTree(node, 0), 4),
+                                   mAux(mClusterTree(node, 1), 4));
+          mAux(node, 5) = std::max(mAux(mClusterTree(node, 0), 5),
+                                   mAux(mClusterTree(node, 1), 5));
+
+          workStack.pop();
+        }
+      } else
+        workStack.pop();
     }
   }
+
+  for (int rank = 0; rank < maxWorkSize; rank++) {
+    int reorderedNode = pow(2, initialLevel) - 1 + rank;
+    const size_t nodeStart = mClusterTree(reorderedNode, 0);
+    const size_t nodeEnd = (rank == maxWorkSize - 1)
+                               ? mClusterTree.extent(0)
+                               : mClusterTree(reorderedNode + 1, 0);
+
+    MPI_Bcast(mAux.data() + 6 * nodeStart, 6 * (nodeEnd - nodeStart), MPI_FLOAT,
+              rank, MPI_COMM_WORLD);
+  }
+
+  // sequential stage
+  {
+    std::stack<std::size_t> workStack;
+    workStack.push(0);
+    while (workStack.size() != 0) {
+      auto node = workStack.top();
+      if (mClusterTree(node, 0) != 0) {
+        // check if child nodes have calculated aux.
+        bool canContinue = false;
+        if (mAux(mClusterTree(node, 0), 0) ==
+            -std::numeric_limits<float>::max()) {
+          workStack.push(mClusterTree(node, 0));
+
+          canContinue = true;
+        }
+
+        if (mAux(mClusterTree(node, 1), 0) ==
+            -std::numeric_limits<float>::max()) {
+          workStack.push(mClusterTree(node, 1));
+
+          canContinue = true;
+        }
+
+        if (!canContinue) {
+          mAux(node, 0) = std::min(mAux(mClusterTree(node, 0), 0),
+                                   mAux(mClusterTree(node, 1), 0));
+          mAux(node, 1) = std::max(mAux(mClusterTree(node, 0), 1),
+                                   mAux(mClusterTree(node, 1), 1));
+          mAux(node, 2) = std::min(mAux(mClusterTree(node, 0), 2),
+                                   mAux(mClusterTree(node, 1), 2));
+          mAux(node, 3) = std::max(mAux(mClusterTree(node, 0), 3),
+                                   mAux(mClusterTree(node, 1), 3));
+          mAux(node, 4) = std::min(mAux(mClusterTree(node, 0), 4),
+                                   mAux(mClusterTree(node, 1), 4));
+          mAux(node, 5) = std::max(mAux(mClusterTree(node, 0), 5),
+                                   mAux(mClusterTree(node, 1), 5));
+
+          workStack.pop();
+        }
+      } else {
+        std::vector<float> aux(6);
+        ComputeAux(mClusterTree(node, 2), mClusterTree(node, 3), aux);
+
+        mAux(node, 0) = aux[0];
+        mAux(node, 1) = aux[1];
+        mAux(node, 2) = aux[2];
+        mAux(node, 3) = aux[3];
+        mAux(node, 4) = aux[4];
+        mAux(node, 5) = aux[5];
+
+        workStack.pop();
+      }
+    }
+  }
+
+  MPI_Barrier(MPI_COMM_WORLD);
 
   // estimate far and close pair size based on aux.
   // close far check
@@ -70,8 +177,12 @@ void HignnModel::CloseFarCheck() {
   std::size_t total_entry = 0;
 
   closeMat[0].push_back(0);
-  for (size_t i = 0; i < mClusterTree.extent(0); i++) {
-    auto node = i;
+  std::queue<std::size_t> nodeList;
+  nodeList.emplace(0);
+  while (nodeList.size() != 0) {
+    auto node = nodeList.front();
+    auto i = node;
+    nodeList.pop();
 
     if (mClusterTree(node, 0) != 0) {
       std::vector<int> childCloseMat;
@@ -101,6 +212,9 @@ void HignnModel::CloseFarCheck() {
       }
       closeMat[mClusterTree(node, 0)] = childCloseMat;
       closeMat[mClusterTree(node, 1)] = childCloseMat;
+
+      nodeList.emplace(mClusterTree(node, 0));
+      nodeList.emplace(mClusterTree(node, 1));
     } else {
       std::vector<int> newCloseMat;
 

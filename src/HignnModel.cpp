@@ -1,3 +1,5 @@
+#include <execution>
+
 #include "HignnModel.hpp"
 
 using namespace std;
@@ -56,8 +58,8 @@ void HignnModel::ComputeAux(const std::size_t first,
 
 size_t HignnModel::Divide(const std::size_t first,
                           const std::size_t last,
-                          [[maybe_unused]] const int axis,
-                          std::vector<std::size_t> &reorderedMap) {
+                          std::vector<std::size_t> &reorderedMap,
+                          const bool parallelFlag) {
   auto &mVertexMirror = *mCoordMirrorPtr;
 
   const std::size_t L = last - first;
@@ -73,16 +75,20 @@ size_t HignnModel::Divide(const std::size_t first,
 
   Eigen::MatrixXf vertexHat(mDim, L);
   for (int d = 0; d < mDim; d++) {
-    for (size_t i = 0; i < L; i++) {
-      vertexHat(d, i) = mVertexMirror(reorderedMap[i + first], d) - mean[d];
-    }
+    if (parallelFlag)
+#pragma omp parallel for schedule(static, 1024)
+      for (size_t i = 0; i < L; i++) {
+        vertexHat(d, i) = mVertexMirror(reorderedMap[i + first], d) - mean[d];
+      }
+    else
+      for (size_t i = 0; i < L; i++) {
+        vertexHat(d, i) = mVertexMirror(reorderedMap[i + first], d) - mean[d];
+      }
   }
 
   Eigen::JacobiSVD<Eigen::MatrixXf> svdHolder(
       vertexHat, Eigen::ComputeThinU | Eigen::ComputeThinV);
-  Eigen::MatrixXf D = svdHolder.singularValues();
   Eigen::MatrixXf U = svdHolder.matrixU();
-  Eigen::MatrixXf V = svdHolder.matrixV();
 
   for (size_t i = 0; i < L; i++) {
     temp[i] = 0.0;
@@ -94,19 +100,37 @@ size_t HignnModel::Divide(const std::size_t first,
   std::vector<std::size_t> newIndex;
   newIndex.resize(temp.size());
   iota(newIndex.begin(), newIndex.end(), 0);
-  sort(newIndex.begin(), newIndex.end(),
-       [&temp](int i1, int i2) { return temp[i1] < temp[i2]; });
-  std::sort(temp.begin(), temp.end());
+
+  if (parallelFlag) {
+    sort(std::execution::par_unseq, newIndex.begin(), newIndex.end(),
+         [&temp](int i1, int i2) { return temp[i1] < temp[i2]; });
+    sort(std::execution::par_unseq, temp.begin(), temp.end());
+  } else {
+    sort(newIndex.begin(), newIndex.end(),
+         [&temp](int i1, int i2) { return temp[i1] < temp[i2]; });
+    sort(temp.begin(), temp.end());
+  }
 
   // Currently, the reordering is a very stupid implementation. Need to
   // improve it.
 
   std::vector<std::size_t> copyIndex(L);
-  for (size_t i = 0; i < L; i++)
-    copyIndex[i] = reorderedMap[i + first];
 
-  for (size_t i = 0; i < L; i++)
-    reorderedMap[i + first] = copyIndex[newIndex[i]];
+  if (parallelFlag) {
+#pragma omp parallel for schedule(static, 1024)
+    for (size_t i = 0; i < L; i++)
+      copyIndex[i] = reorderedMap[i + first];
+
+#pragma omp parallel for schedule(static, 1024)
+    for (size_t i = 0; i < L; i++)
+      reorderedMap[i + first] = copyIndex[newIndex[i]];
+  } else {
+    for (size_t i = 0; i < L; i++)
+      copyIndex[i] = reorderedMap[i + first];
+
+    for (size_t i = 0; i < L; i++)
+      reorderedMap[i + first] = copyIndex[newIndex[i]];
+  }
 
   auto result = std::upper_bound(temp.begin(), temp.end(), 0);
 

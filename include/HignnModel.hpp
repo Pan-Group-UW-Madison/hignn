@@ -94,8 +94,8 @@ protected:
 
   std::size_t Divide(const std::size_t first,
                      const std::size_t last,
-                     const int axis,
-                     std::vector<std::size_t> &reorderedMap);
+                     std::vector<std::size_t> &reorderedMap,
+                     const bool parallelFlag);
 
   void Reorder(const std::vector<std::size_t> &reorderedMap);
 
