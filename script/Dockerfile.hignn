@@ -13,11 +13,15 @@ RUN apt-get update && \
 COPY common.focal.sh /opt/common.focal.sh
 RUN /opt/common.focal.sh && rm -f /opt/common.focal.sh
 
+ENV LC_ALL=C
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/opt/nvidia/nsight-compute/2022.3.0/:$PATH
+
 # GPU-aware MPI
 RUN wget https://www.open-mpi.org//software/ompi/v4.1/downloads/openmpi-4.1.5.tar.gz && \
     tar -xvf openmpi-4.1.5.tar.gz && \
     cd openmpi-4.1.5 && \
-    ./configure --with-cuda=/usr/local/cuda --prefix=/opt/openmpi && \
+    ./configure --with-cuda=/usr/local/cuda --prefix=/opt/openmpi --enable-orterun-prefix-by-default && \
     make -j$(nproc) && \
     make install && \
     cd .. && \
@@ -36,14 +40,14 @@ RUN export OMPI_CXX=/opt/kokkos/bin/nvcc_wrapper && \
     make install
 
 # PyTorch and LibTorch with CUDA 11.8 as PyTorch Geometric requires CUDA 11.8
-RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-RUN wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcu118.zip && \
-    unzip libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip && \
+RUN pip install torch==2.2.1 torchvision==0.17.0 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu118
+RUN wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.2.1%2Bcu118.zip && \
+    unzip libtorch-cxx11-abi-shared-with-deps-2.2.1+cu118.zip && \
     mv libtorch /opt/libtorch && \
-    rm -rf libtorch-cxx11-abi-shared-with-deps-2.0.1+cu118.zip libtorch
+    rm -rf libtorch-cxx11-abi-shared-with-deps-2.2.1+cu118.zip libtorch
 
 # PyTorch Geometric
-RUN pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+RUN pip3 install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.1+cu118.html
 
 # environment variables
 ENV PATH="${PATH}:/opt/openmpi/bin"
@@ -52,8 +56,68 @@ ENV OMPI_ALLOW_RUN_AS_ROOT=1
 ENV Kokkos_PATH=/opt/kokkos
 ENV LibTorch_PATH=/opt/libtorch
 
-ENV OMP_PROC_BIND=close
-ENV OMP_PLACES=cores
+ENV OMP_PROC_BIND=spread
+ENV OMP_PLACES=sockets
 ENV OMP_NUM_THREADS=10
 
-RUN pip install mpi4py
+RUN pip3 install mpi4py h5py
+RUN service ssh start
+
+# setup ssh
+ENV USER mpirun
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=/home/${USER}
+
+RUN echo 'root:${USER}' | chpasswd
+RUN sed -i 's/PermitRootLogin without-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+# SSH login fix. Otherwise user is kicked off after login
+RUN sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' -i /etc/pam.d/sshd
+
+ENV NOTVISIBLE "in users profile"
+RUN echo "export VISIBLE=now" >> /etc/profile
+
+# ------------------------------------------------------------
+# Add an 'mpirun' user
+# ------------------------------------------------------------
+
+RUN adduser --disabled-password --gecos "" ${USER} && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# ------------------------------------------------------------
+# Set-Up SSH with our Github deploy key
+# ------------------------------------------------------------
+
+ENV SSHDIR ${HOME}/.ssh/
+
+RUN mkdir -p ${SSHDIR}
+
+ADD ssh/config ${SSHDIR}/config
+ADD ssh/id_rsa.mpi ${SSHDIR}/id_rsa
+ADD ssh/id_rsa.mpi.pub ${SSHDIR}/id_rsa.pub
+ADD ssh/id_rsa.mpi.pub ${SSHDIR}/authorized_keys
+
+RUN chmod -R 600 ${SSHDIR}* && \
+    chown -R ${USER}:${USER} ${SSHDIR}
+
+USER ${USER}
+
+# ------------------------------------------------------------
+# Configure OpenMPI
+# ------------------------------------------------------------
+
+USER root
+
+RUN rm -fr ${HOME}/.openmpi && mkdir -p ${HOME}/.openmpi
+ADD default-mca-params.conf ${HOME}/.openmpi/mca-params.conf
+RUN chown -R ${USER}:${USER} ${HOME}/.openmpi
+
+# ------------------------------------------------------------
+# Copy MPI4PY example scripts
+# ------------------------------------------------------------
+
+ENV TRIGGER 1
+
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D"]
