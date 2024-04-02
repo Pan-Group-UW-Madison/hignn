@@ -64,7 +64,7 @@ RUN pip3 install mpi4py h5py
 RUN service ssh start
 
 # setup ssh
-ENV USER mpirun
+ENV USER root
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/${USER}
@@ -79,14 +79,7 @@ ENV NOTVISIBLE "in users profile"
 RUN echo "export VISIBLE=now" >> /etc/profile
 
 # ------------------------------------------------------------
-# Add an 'mpirun' user
-# ------------------------------------------------------------
-
-RUN adduser --disabled-password --gecos "" ${USER} && \
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# ------------------------------------------------------------
-# Set-Up SSH with our Github deploy key
+# Set-Up SSH with key
 # ------------------------------------------------------------
 
 ENV SSHDIR ${HOME}/.ssh/
