@@ -159,7 +159,7 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     // do inference
     auto options = torch::TensorOptions()
                        .dtype(torch::kFloat32)
-                       .device(torch::kCUDA, mMPIRank)
+                       .device(torch::kCUDA, mCudaDevice)
                        .requires_grad(false);
     torch::Tensor relativeCoordTensor =
         torch::from_blob(relativeCoordPool.data(), {totalCoord, 3}, options);

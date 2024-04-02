@@ -63,6 +63,7 @@ protected:
 
   int mMPIRank;
   int mMPISize;
+  int mCudaDevice;
 
   double mEpsilon;
 
