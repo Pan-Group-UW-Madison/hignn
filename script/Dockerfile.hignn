@@ -64,7 +64,7 @@ RUN pip3 install mpi4py h5py
 RUN service ssh start
 
 # setup ssh
-ENV USER root
+ENV USER mpirun
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/${USER}
@@ -77,6 +77,13 @@ RUN sed 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so
 
 ENV NOTVISIBLE "in users profile"
 RUN echo "export VISIBLE=now" >> /etc/profile
+
+# ------------------------------------------------------------
+# Add an 'mpirun' user
+# ------------------------------------------------------------
+
+RUN adduser --disabled-password --gecos "" ${USER} && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # ------------------------------------------------------------
 # Set-Up SSH with key
@@ -93,8 +100,6 @@ ADD ssh/id_rsa.mpi.pub ${SSHDIR}/authorized_keys
 
 RUN chmod -R 600 ${SSHDIR}* && \
     chown -R ${USER}:${USER} ${SSHDIR}
-
-USER ${USER}
 
 # ------------------------------------------------------------
 # Configure OpenMPI
