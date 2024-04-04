@@ -9,9 +9,10 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   double queryDuration = 0;
   double dotDuration = 0;
 
-  const int leafNodeSize = mLeafNodePtr->extent(0);
-  const int maxWorkSize = mMaxRelativeCoord / mMaxCloseDotBlockSize;
-  int workSize = std::min(maxWorkSize, leafNodeSize);
+  const int closeNodeSize = mCloseMatIPtr->extent(0);
+  const int maxWorkSize = 1000;
+  int workSize = std::min(maxWorkSize, closeNodeSize);
+  int finishedNodeSize = 0;
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
@@ -21,37 +22,65 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   DeviceFloatMatrix queryResultPool("queryResultPool", mMaxRelativeCoord, 3);
 
   DeviceIntVector workingNode("workingNode", maxWorkSize);
-  DeviceIntVector workingNodeOffset("workingNodeOffset", maxWorkSize);
-  DeviceIntVector workingNodeCpy("workingNodeCpy", maxWorkSize);
-  DeviceIntVector workingFlag("workingFlag", maxWorkSize);
 
   DeviceIntVector relativeCoordSize("relativeCoordSize", maxWorkSize);
   DeviceIntVector relativeCoordOffset("relativeCoordOffset", maxWorkSize);
-
-  DeviceIndexVector nodeOffset("nodeOffset", leafNodeSize);
 
   auto &mCloseMatI = *mCloseMatIPtr;
   auto &mCloseMatJ = *mCloseMatJPtr;
   auto &mCoord = *mCoordPtr;
   auto &mClusterTree = *mClusterTreePtr;
-  auto &mLeafNode = *mLeafNodePtr;
 
   bool useSymmetry = mUseSymmetry;
 
-  Kokkos::parallel_for(
-      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, leafNodeSize),
-      KOKKOS_LAMBDA(const std::size_t i) { nodeOffset(i) = mCloseMatI(i); });
-
-  Kokkos::parallel_for(
-      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-      KOKKOS_LAMBDA(const std::size_t i) {
-        workingNode(i) = i;
-        workingFlag(i) = 1;
-      });
-  Kokkos::fence();
-
-  int workingFlagSum = workSize;
   while (workSize > 0) {
+    {
+      workSize = min(maxWorkSize, closeNodeSize - finishedNodeSize);
+
+      int lowerWorkSize = 0;
+      int upperWorkSize = workSize;
+
+      while (true) {
+        int estimatedWorkload = 0;
+
+        Kokkos::parallel_reduce(
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
+            KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
+              const int nodeI = mCloseMatI(i);
+              const int indexIStart = mClusterTree(nodeI, 2);
+              const int indexIEnd = mClusterTree(nodeI, 3);
+              const int workSizeI = indexIEnd - indexIStart;
+
+              const int nodeJ = mCloseMatJ(i);
+              const int indexJStart = mClusterTree(nodeJ, 2);
+              const int indexJEnd = mClusterTree(nodeJ, 3);
+              const int workSizeJ = indexJEnd - indexJStart;
+
+              tSum += workSizeI * workSizeJ;
+            },
+            Kokkos::Sum<int>(estimatedWorkload));
+
+        if (estimatedWorkload > (int)mMaxRelativeCoord) {
+          upperWorkSize = workSize;
+          workSize = (lowerWorkSize + upperWorkSize) / 2;
+        } else {
+          if (upperWorkSize - lowerWorkSize <= 1) {
+            break;
+          } else {
+            lowerWorkSize = workSize;
+            workSize = (lowerWorkSize + upperWorkSize) / 2;
+          }
+        }
+      }
+    }
+
+    Kokkos::parallel_for(
+        Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
+        KOKKOS_LAMBDA(const std::size_t i) {
+          workingNode(i) = i + finishedNodeSize;
+        });
+    Kokkos::fence();
+
     totalNumIter++;
     int totalCoord = 0;
     Kokkos::parallel_reduce(
@@ -59,8 +88,8 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
           const int rank = i;
           const int node = workingNode(rank);
-          const int nodeI = mLeafNode(node);
-          const int nodeJ = mCloseMatJ(nodeOffset(node));
+          const int nodeI = mCloseMatI(node);
+          const int nodeJ = mCloseMatI(node);
 
           const int indexIStart = mClusterTree(nodeI, 2);
           const int indexIEnd = mClusterTree(nodeI, 3);
@@ -97,8 +126,8 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 &teamMember) {
           const int rank = teamMember.league_rank();
           const int node = workingNode(rank);
-          const int nodeI = mLeafNode(node);
-          const int nodeJ = mCloseMatJ(nodeOffset(node));
+          const int nodeI = mCloseMatI(node);
+          const int nodeJ = mCloseMatI(node);
           const int relativeOffset = relativeCoordOffset(rank);
 
           const int indexIStart = mClusterTree(nodeI, 2);
@@ -157,8 +186,8 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 &teamMember) {
           const int rank = teamMember.league_rank();
           const int node = workingNode(rank);
-          const std::size_t nodeI = mLeafNode(node);
-          const std::size_t nodeJ = mCloseMatJ(nodeOffset(node));
+          const int nodeI = mCloseMatI(node);
+          const int nodeJ = mCloseMatI(node);
           const int relativeOffset = relativeCoordOffset(rank);
 
           const std::size_t indexIStart = mClusterTree(nodeI, 2);
@@ -209,64 +238,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         std::chrono::duration_cast<std::chrono::microseconds>(end - begin)
             .count();
 
-    // post processing
-    Kokkos::parallel_for(
-        Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-        KOKKOS_LAMBDA(const int rank) { workingFlag(rank) = 1; });
-    Kokkos::fence();
-
-    Kokkos::parallel_for(
-        Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-        KOKKOS_LAMBDA(const int rank) {
-          nodeOffset(workingNode(rank))++;
-          if (nodeOffset(workingNode(rank)) ==
-              mCloseMatI(workingNode(rank) + 1)) {
-            workingNode(rank) += maxWorkSize;
-          }
-
-          if (workingNode(rank) >= leafNodeSize) {
-            workingFlag(rank) = 0;
-          }
-        });
-    Kokkos::fence();
-
-    Kokkos::parallel_reduce(
-        Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-        KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-          tSum += workingFlag(i);
-        },
-        Kokkos::Sum<int>(workingFlagSum));
-    Kokkos::fence();
-
-    if (workSize > workingFlagSum) {
-      // copy the working node to working node cpy and shrink the work size
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const int rank) {
-            workingNodeCpy(rank) = workingNode(rank);
-            int counter = rank + 1;
-            if (rank < workingFlagSum)
-              for (int i = 0; i < workSize; i++) {
-                if (workingFlag(i) == 1) {
-                  counter--;
-                }
-                if (counter == 0) {
-                  workingNodeOffset(rank) = i;
-                  break;
-                }
-              }
-          });
-      Kokkos::fence();
-
-      workSize = workingFlagSum;
-
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
-          KOKKOS_LAMBDA(const int rank) {
-            workingNode(rank) = workingNodeCpy(workingNodeOffset(rank));
-          });
-      Kokkos::fence();
-    }
+    finishedNodeSize += workSize;
   }
 
   MPI_Allreduce(MPI_IN_PLACE, &totalNumQuery, 1, MPI_LONG, MPI_SUM,

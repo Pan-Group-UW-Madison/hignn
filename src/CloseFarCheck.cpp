@@ -351,34 +351,38 @@ void HignnModel::CloseFarCheck() {
     }
   }
 
-  mLeafNodePtr =
-      std::make_shared<DeviceIndexVector>("mLeafNode", leafNode.size());
-  auto &mLeafNode = *mLeafNodePtr;
-  DeviceIndexVector::HostMirror hostLeafNode =
-      Kokkos::create_mirror_view(*mLeafNodePtr);
-
-  for (size_t i = 0; i < leafNode.size(); i++) {
-    hostLeafNode(i) = leafNode[i];
-  }
-
   mCloseMatIPtr =
-      std::make_shared<DeviceIndexVector>("mCloseMatI", closeMatI.size());
-  auto &mCloseMatI = *mCloseMatIPtr;
-  DeviceIndexVector::HostMirror hostCloseMatI =
-      Kokkos::create_mirror_view(*mCloseMatIPtr);
-
-  for (size_t i = 0; i < closeMatI.size(); i++) {
-    hostCloseMatI(i) = closeMatI[i];
-  }
-
+      std::make_shared<DeviceIndexVector>("mCloseMatI", closeMatJ.size());
   mCloseMatJPtr =
       std::make_shared<DeviceIndexVector>("mCloseMatJ", closeMatJ.size());
+  auto &mCloseMatI = *mCloseMatIPtr;
   auto &mCloseMatJ = *mCloseMatJPtr;
+  DeviceIndexVector::HostMirror hostCloseMatI =
+      Kokkos::create_mirror_view(*mCloseMatIPtr);
   DeviceIndexVector::HostMirror hostCloseMatJ =
       Kokkos::create_mirror_view(*mCloseMatJPtr);
 
-  for (size_t i = 0; i < closeMatJ.size(); i++) {
-    hostCloseMatJ(i) = closeMatJ[i];
+  {
+    auto closeMatOffset = closeMatI;
+
+    size_t counter = 0;
+    size_t pointer = 0;
+    while (counter < closeMatJ.size()) {
+      while (true) {
+        if (closeMatOffset[pointer] != closeMatOffset[pointer + 1])
+          break;
+        pointer++;
+        pointer = pointer % (closeMatI.size() - 1);
+      }
+
+      hostCloseMatI(counter) = leafNode[pointer];
+      hostCloseMatJ(counter) = closeMatJ[closeMatOffset[pointer]];
+      closeMatOffset[pointer]++;
+
+      counter++;
+      pointer++;
+      pointer = pointer % (closeMatI.size() - 1);
+    }
   }
 
   MPI_Allreduce(MPI_IN_PLACE, &totalCloseEntry, 1, MPI_UNSIGNED_LONG, MPI_SUM,
@@ -392,7 +396,6 @@ void HignnModel::CloseFarCheck() {
 
   Kokkos::deep_copy(mCloseMatI, hostCloseMatI);
   Kokkos::deep_copy(mCloseMatJ, hostCloseMatJ);
-  Kokkos::deep_copy(mLeafNode, hostLeafNode);
 
   std::size_t totalFarSize = 0;
   std::size_t totalFarNode = 0;
