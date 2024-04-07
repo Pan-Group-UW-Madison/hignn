@@ -4,6 +4,7 @@ import numpy as np
 import sys
 from mpi4py import MPI
 import time
+import h5py
 
 def velocity_update(t, position):
     if rank == 0:
@@ -42,7 +43,7 @@ if __name__ == '__main__':
     
     NN = X.shape[0]
 
-    hignn_model = hignn.HignnModel(X, 100)
+    hignn_model = hignn.HignnModel(X, 50)
     
     hignn_model.LoadTwoBodyModel('nn/3D_force_UB_max600_try2')
     
@@ -77,14 +78,16 @@ if __name__ == '__main__':
     
     t1 = time.time()
     for i in range(2):
-        np.savetxt('Result/pos'+str(ite)+'rank'+str(rank)+'.txt', X[rank_range[rank]:rank_range[rank+1], :], fmt='%f', delimiter=' ')
+        with h5py.File('Result/pos'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
+            f.create_dataset('pos', data=X[rank_range[rank]:rank_range[rank+1], :])
         
         tt1 = time.time()
         V = velocity_update(ts, X)
         if rank == 0:
             print("Time for velocity_update: {t:.4f}s".format(t = time.time() - tt1))
 
-        np.savetxt('Result/vel'+str(ite)+'rank'+str(rank)+'.txt', V[rank_range[rank]:rank_range[rank+1], :], fmt='%f', delimiter=' ')
+        with h5py.File('Result/vel'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
+            f.create_dataset('vel', data=V[rank_range[rank]:rank_range[rank+1], :])
         
         X = X + dt * V
         ts = ts + dt
