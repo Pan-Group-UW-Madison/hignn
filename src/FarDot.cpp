@@ -245,7 +245,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 mClusterTree(nodeJ, 2) +
                 workingNodeSelectedColIdx(rank, workingNodeIteration(rank));
 
-            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, workSizeI),
+            Kokkos::parallel_for(Kokkos::TeamVectorRange(teamMember, workSizeI),
                                  [&](const int j) {
                                    const int index = relativeOffset + j;
                                    for (int l = 0; l < 3; l++) {
@@ -539,7 +539,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 mClusterTree(nodeI, 2) +
                 workingNodeSelectedRowIdx(rank, workingNodeIteration(rank));
 
-            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, workSizeJ),
+            Kokkos::parallel_for(Kokkos::TeamVectorRange(teamMember, workSizeJ),
                                  [&](const int j) {
                                    const int index = relativeOffset + j;
                                    for (int l = 0; l < 3; l++) {
@@ -995,9 +995,28 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             const int indexJEnd = mClusterTree(nodeJ, 3);
             const int workSizeJ = indexJEnd - indexJStart;
 
+            // Kokkos::parallel_for(
+            //     Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
+            //     [&](const int i) {
+            //       const int iter = i / 3;
+            //       const int row = i % 3;
+
+            //       const int qkOffset =
+            //           workingNodeQMatOffset(workingNodeRank, iter);
+            //       const int middleMatOffset = 3 * innerNumIter * rank;
+
+            //       double sum = 0.0;
+            //       for (int j = 0; j < workSizeJ; j++)
+            //         for (int k = 0; k < 3; k++)
+            //           sum += qMatPool(qkOffset + j, row * 3 + k) *
+            //                  f(indexJStart + j, k);
+            //       middleMatPool(middleMatOffset + i) = sum;
+            //     });
+
             Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
-                [&](const int i) {
+                Kokkos::TeamThreadMDRange(teamMember, innerNumIter * 3,
+                                          workSizeJ),
+                [&](const int i, const int j) {
                   const int iter = i / 3;
                   const int row = i % 3;
 
@@ -1006,11 +1025,13 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   const int middleMatOffset = 3 * innerNumIter * rank;
 
                   double sum = 0.0;
-                  for (int j = 0; j < workSizeJ; j++)
-                    for (int k = 0; k < 3; k++)
-                      sum += qMatPool(qkOffset + j, row * 3 + k) *
-                             f(indexJStart + j, k);
-                  middleMatPool(middleMatOffset + i) = sum;
+                  for (int k = 0; k < 3; k++)
+                    sum += qMatPool(qkOffset + j, row * 3 + k) *
+                           f(indexJStart + j, k);
+                  Kokkos::single(Kokkos::PerThread(teamMember), [&]() {
+                    Kokkos::atomic_add(&middleMatPool(middleMatOffset + i),
+                                       sum);
+                  });
                 });
           });
       Kokkos::fence();
@@ -1073,9 +1094,27 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
               const int indexIEnd = mClusterTree(nodeI, 3);
               const int workSizeI = indexIEnd - indexIStart;
 
+              // Kokkos::parallel_for(
+              //     Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
+              //     [&](const int i) {
+              //       const int iter = i / 3;
+              //       const int row = i % 3;
+
+              //       const int ckOffset =
+              //           workingNodeCMatOffset(workingNodeRank, iter);
+              //       const int middleMatOffset = 3 * innerNumIter * rank;
+
+              //       double sum = 0.0;
+              //       for (int j = 0; j < workSizeI; j++)
+              //         for (int k = 0; k < 3; k++)
+              //           sum += cMatPool(ckOffset + j, k * 3 + row) *
+              //                  f(indexIStart + j, k);
+              //       middleMatPool(middleMatOffset + i) = sum;
+              //     });
               Kokkos::parallel_for(
-                  Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
-                  [&](const int i) {
+                  Kokkos::TeamThreadMDRange(teamMember, innerNumIter * 3,
+                                            workSizeI),
+                  [&](const int i, const int j) {
                     const int iter = i / 3;
                     const int row = i % 3;
 
@@ -1084,11 +1123,13 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                     const int middleMatOffset = 3 * innerNumIter * rank;
 
                     double sum = 0.0;
-                    for (int j = 0; j < workSizeI; j++)
-                      for (int k = 0; k < 3; k++)
-                        sum += cMatPool(ckOffset + j, k * 3 + row) *
-                               f(indexIStart + j, k);
-                    middleMatPool(middleMatOffset + i) = sum;
+                    for (int k = 0; k < 3; k++)
+                      sum += cMatPool(ckOffset + j, k * 3 + row) *
+                             f(indexIStart + j, k);
+                    Kokkos::single(Kokkos::PerThread(teamMember), [&]() {
+                      Kokkos::atomic_add(&middleMatPool(middleMatOffset + i),
+                                         sum);
+                    });
                   });
             });
         Kokkos::fence();
