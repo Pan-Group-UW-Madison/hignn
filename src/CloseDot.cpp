@@ -46,12 +46,12 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         Kokkos::parallel_reduce(
             Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
             KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
-              const int nodeI = mCloseMatI(i);
+              const int nodeI = mCloseMatI(i + finishedNodeSize);
               const int indexIStart = mClusterTree(nodeI, 2);
               const int indexIEnd = mClusterTree(nodeI, 3);
               const int workSizeI = indexIEnd - indexIStart;
 
-              const int nodeJ = mCloseMatJ(i);
+              const int nodeJ = mCloseMatJ(i + finishedNodeSize);
               const int indexJStart = mClusterTree(nodeJ, 2);
               const int indexJEnd = mClusterTree(nodeJ, 3);
               const int workSizeJ = indexJEnd - indexJStart;
@@ -65,6 +65,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           workSize = (lowerWorkSize + upperWorkSize) / 2;
         } else {
           if (upperWorkSize - lowerWorkSize <= 1) {
+            workSize = lowerWorkSize;
             break;
           } else {
             lowerWorkSize = workSize;
@@ -89,7 +90,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           const int rank = i;
           const int node = workingNode(rank);
           const int nodeI = mCloseMatI(node);
-          const int nodeJ = mCloseMatI(node);
+          const int nodeJ = mCloseMatJ(node);
 
           const int indexIStart = mClusterTree(nodeI, 2);
           const int indexIEnd = mClusterTree(nodeI, 3);
@@ -127,7 +128,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           const int rank = teamMember.league_rank();
           const int node = workingNode(rank);
           const int nodeI = mCloseMatI(node);
-          const int nodeJ = mCloseMatI(node);
+          const int nodeJ = mCloseMatJ(node);
           const int relativeOffset = relativeCoordOffset(rank);
 
           const int indexIStart = mClusterTree(nodeI, 2);
@@ -187,7 +188,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           const int rank = teamMember.league_rank();
           const int node = workingNode(rank);
           const int nodeI = mCloseMatI(node);
-          const int nodeJ = mCloseMatI(node);
+          const int nodeJ = mCloseMatJ(node);
           const int relativeOffset = relativeCoordOffset(rank);
 
           const std::size_t indexIStart = mClusterTree(nodeI, 2);
