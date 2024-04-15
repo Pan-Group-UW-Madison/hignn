@@ -53,8 +53,8 @@ if __name__ == '__main__':
     hignn_model.SetMatPoolSizeFactor(30)
     hignn_model.SetPostCheckFlag(False)
     hignn_model.SetUseSymmetryFlag(True)
-    hignn_model.SetMaxFarDotWorkNodeSize(5000)
-    hignn_model.SetMaxRelativeCoord(500000)
+    hignn_model.SetMaxFarDotWorkNodeSize(10000)
+    hignn_model.SetMaxRelativeCoord(1000000)
     
     # time_integrator = hignn.ExplicitEuler()
     
