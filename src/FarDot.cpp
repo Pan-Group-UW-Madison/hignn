@@ -197,9 +197,11 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
       // calculate relative coord for C
       totalCoord = 0;
-      Kokkos::parallel_reduce(
+      Kokkos::parallel_scan(
           Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
+          KOKKOS_LAMBDA(const int i, int &update, const bool final) {
+            if (final)
+              relativeCoordOffset(i) = update;
             const int nodeI = mFarMatI(workingNode(i));
 
             const int indexIStart = mClusterTree(nodeI, 2);
@@ -207,23 +209,10 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
             const int workSizeI = indexIEnd - indexIStart;
 
-            relativeCoordSize(i) = workSizeI;
-
-            tSum += workSizeI;
+            update += workSizeI;
           },
-          Kokkos::Sum<int>(totalCoord));
-      Kokkos::fence();
-
+          totalCoord);
       totalNumQuery += totalCoord;
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const int rank) {
-            relativeCoordOffset(rank) = 0;
-            for (int i = 0; i < rank; i++) {
-              relativeCoordOffset(rank) += relativeCoordSize(i);
-            }
-          });
-      Kokkos::fence();
 
       // calculate the relative coordinates
       Kokkos::parallel_for(
@@ -376,11 +365,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   const int index = ckOffset + j;
                   const int ckIndex = relativeCoordOffset(rank) + j;
 
-                  // for (int k = 0; k < 9; k++) {
-                  //   curNorm += pow(cMatPool(index, k), 2);
-                  //   ckMatPool(ckIndex, k) = cMatPool(index, k);
-                  // }
-
                   const double a = cMatPool(index, 0);
                   const double b = cMatPool(index, 1);
                   const double c = cMatPool(index, 2);
@@ -415,28 +399,30 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
             const int ik = result.loc;
 
-            const double a = cMatPool(ckOffset + ik, 0);
-            const double b = cMatPool(ckOffset + ik, 1);
-            const double c = cMatPool(ckOffset + ik, 2);
-            const double d = cMatPool(ckOffset + ik, 3);
-            const double e = cMatPool(ckOffset + ik, 4);
-            const double f = cMatPool(ckOffset + ik, 5);
-            const double g = cMatPool(ckOffset + ik, 6);
-            const double h = cMatPool(ckOffset + ik, 7);
-            const double i = cMatPool(ckOffset + ik, 8);
+            Kokkos::single(Kokkos::PerTeam(teamMember), [&]() {
+              const double a = cMatPool(ckOffset + ik, 0);
+              const double b = cMatPool(ckOffset + ik, 1);
+              const double c = cMatPool(ckOffset + ik, 2);
+              const double d = cMatPool(ckOffset + ik, 3);
+              const double e = cMatPool(ckOffset + ik, 4);
+              const double f = cMatPool(ckOffset + ik, 5);
+              const double g = cMatPool(ckOffset + ik, 6);
+              const double h = cMatPool(ckOffset + ik, 7);
+              const double i = cMatPool(ckOffset + ik, 8);
 
-            const double det =
-                a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+              const double det = a * (e * i - f * h) - b * (d * i - f * g) +
+                                 c * (d * h - e * g);
 
-            ckInvMatPool(rank, 0) = (e * i - f * h) / det;
-            ckInvMatPool(rank, 1) = -(b * i - c * h) / det;
-            ckInvMatPool(rank, 2) = (b * f - c * e) / det;
-            ckInvMatPool(rank, 3) = -(d * i - f * g) / det;
-            ckInvMatPool(rank, 4) = (a * i - c * g) / det;
-            ckInvMatPool(rank, 5) = -(a * f - c * d) / det;
-            ckInvMatPool(rank, 6) = (d * h - e * g) / det;
-            ckInvMatPool(rank, 7) = -(a * h - b * g) / det;
-            ckInvMatPool(rank, 8) = (a * e - b * d) / det;
+              ckInvMatPool(rank, 0) = (e * i - f * h) / det;
+              ckInvMatPool(rank, 1) = -(b * i - c * h) / det;
+              ckInvMatPool(rank, 2) = (b * f - c * e) / det;
+              ckInvMatPool(rank, 3) = -(d * i - f * g) / det;
+              ckInvMatPool(rank, 4) = (a * i - c * g) / det;
+              ckInvMatPool(rank, 5) = -(a * f - c * d) / det;
+              ckInvMatPool(rank, 6) = (d * h - e * g) / det;
+              ckInvMatPool(rank, 7) = -(a * h - b * g) / det;
+              ckInvMatPool(rank, 8) = (a * e - b * d) / det;
+            });
           });
       Kokkos::fence();
 
@@ -491,9 +477,11 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
       // calculate relative coord for Q
       totalCoord = 0;
-      Kokkos::parallel_reduce(
+      Kokkos::parallel_scan(
           Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const std::size_t i, int &tSum) {
+          KOKKOS_LAMBDA(const int i, int &update, const bool final) {
+            if (final)
+              relativeCoordOffset(i) = update;
             const int nodeJ = mFarMatJ(workingNode(i));
 
             const int indexJStart = mClusterTree(nodeJ, 2);
@@ -501,23 +489,10 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
             const int workSizeJ = indexJEnd - indexJStart;
 
-            relativeCoordSize(i) = workSizeJ;
-
-            tSum += workSizeJ;
+            update += workSizeJ;
           },
-          Kokkos::Sum<int>(totalCoord));
-      Kokkos::fence();
-
+          totalCoord);
       totalNumQuery += totalCoord;
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const int rank) {
-            relativeCoordOffset(rank) = 0;
-            for (int i = 0; i < rank; i++) {
-              relativeCoordOffset(rank) += relativeCoordSize(i);
-            }
-          });
-      Kokkos::fence();
 
       // calculate the relative coordinates
       Kokkos::parallel_for(
@@ -665,7 +640,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
             Kokkos::MaxLoc<double, int>::value_type result;
             Kokkos::parallel_reduce(
-                Kokkos::TeamThreadRange(teamMember, colSize),
+                Kokkos::TeamVectorRange(teamMember, colSize),
                 [&](const int j,
                     Kokkos::MaxLoc<double, int>::value_type &update) {
                   double curNorm = 0.0;
@@ -798,30 +773,31 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
             teamMember.team_barrier();
 
-            const double ckCol0SquaredNorm = ckArrReduce.values[0];
-            const double ckCol1SquaredNorm = ckArrReduce.values[1];
-            const double ckCol2SquaredNorm = ckArrReduce.values[2];
+            Kokkos::single(Kokkos::PerTeam(teamMember), [&]() {
+              const double ckCol0SquaredNorm = ckArrReduce.values[0];
+              const double ckCol1SquaredNorm = ckArrReduce.values[1];
+              const double ckCol2SquaredNorm = ckArrReduce.values[2];
 
-            const double ck01Dot = ckArrReduce.values[3];
-            const double ck12Dot = ckArrReduce.values[4];
-            const double ck20Dot = ckArrReduce.values[5];
+              const double ck01Dot = ckArrReduce.values[3];
+              const double ck12Dot = ckArrReduce.values[4];
+              const double ck20Dot = ckArrReduce.values[5];
 
-            const double qkRow0SquaredNorm = qkArrReduce.values[0];
-            const double qkRow1SquaredNorm = qkArrReduce.values[1];
-            const double qkRow2SquaredNorm = qkArrReduce.values[2];
+              const double qkRow0SquaredNorm = qkArrReduce.values[0];
+              const double qkRow1SquaredNorm = qkArrReduce.values[1];
+              const double qkRow2SquaredNorm = qkArrReduce.values[2];
 
-            const double qk01Dot = qkArrReduce.values[3];
-            const double qk12Dot = qkArrReduce.values[4];
-            const double qk20Dot = qkArrReduce.values[5];
+              const double qk01Dot = qkArrReduce.values[3];
+              const double qk12Dot = qkArrReduce.values[4];
+              const double qk20Dot = qkArrReduce.values[5];
 
-            nu2(rank) = ckCol0SquaredNorm * qkRow0SquaredNorm +
-                        ckCol1SquaredNorm * qkRow1SquaredNorm +
-                        ckCol2SquaredNorm * qkRow2SquaredNorm +
-                        2.0 * qk01Dot * ck01Dot + 2.0 * qk12Dot * ck12Dot +
-                        2.0 * qk20Dot * ck20Dot;
+              nu2(rank) = ckCol0SquaredNorm * qkRow0SquaredNorm +
+                          ckCol1SquaredNorm * qkRow1SquaredNorm +
+                          ckCol2SquaredNorm * qkRow2SquaredNorm +
+                          2.0 * qk01Dot * ck01Dot + 2.0 * qk12Dot * ck12Dot +
+                          2.0 * qk20Dot * ck20Dot;
 
-            if (teamMember.team_rank() == 0)
               mu2(rank) += nu2(rank);
+            });
             teamMember.team_barrier();
 
             for (int l = 0; l < workingNodeIteration(rank) - 1; l++) {
