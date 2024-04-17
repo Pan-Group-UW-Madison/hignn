@@ -64,9 +64,9 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   const int maxIter = mMaxIter;
   const int middleMatPoolSize = maxWorkNodeSize * maxIter;
   int workNodeSize = 0;
-  int cMatPoolUsedSize = 0;
-  int qMatPoolUsedSize = 0;
   int allowedWorkload = 0;
+
+  const bool postCheck = false;
 
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       maxRelativeCoord * 3);
@@ -90,7 +90,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                                             maxWorkNodeSize, maxIter);
   DeviceIntVector workingNodeIteration("workingNodeIteration", maxWorkNodeSize);
 
-  DeviceIntVector workingNodeCopy("workingNodeCopy", maxWorkNodeSize);
+  DeviceIntVector workingNodeCopy("workingNodeCopy", maxWorkNodeSize * maxIter);
   DeviceIntVector workingNodeCopyOffset("workingNodeCopyOffset",
                                         maxWorkNodeSize);
 
@@ -105,7 +105,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   const double epsilon = mEpsilon;
   const double epsilon2 = epsilon * epsilon;
 
-  DeviceIntVector relativeCoordSize("relativeCoordSize", maxWorkNodeSize);
   DeviceIntVector relativeCoordOffset("relativeCoordOffset", maxWorkNodeSize);
 
   auto &mFarMatI = *mFarMatIPtr;
@@ -189,6 +188,82 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             nu2(i) = 0.0;
             mu2(i) = 0.0;
           });
+
+      // estimate CMat offset
+      totalCoord = 0;
+      Kokkos::parallel_scan(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
+          KOKKOS_LAMBDA(const int i, int &update, const bool final) {
+            if (final)
+              relativeCoordOffset(i) = update;
+            const int nodeI = mFarMatI(workingNode(i));
+
+            const int indexIStart = mClusterTree(nodeI, 2);
+            const int indexIEnd = mClusterTree(nodeI, 3);
+
+            const int workSizeI = indexIEnd - indexIStart;
+
+            update += workSizeI;
+          },
+          totalCoord);
+      Kokkos::fence();
+
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+              0, workNodeSize * maxIter),
+          KOKKOS_LAMBDA(const int i) {
+            const int rank = i / maxIter;
+            const int l = i % maxIter;
+
+            const int nodeI = mFarMatI(workingNode(rank));
+
+            const int indexIStart = mClusterTree(nodeI, 2);
+            const int indexIEnd = mClusterTree(nodeI, 3);
+
+            const int workSizeI = indexIEnd - indexIStart;
+
+            workingNodeCMatOffset(rank, l) =
+                relativeCoordOffset(rank) * maxIter + workSizeI * l;
+          });
+      Kokkos::fence();
+
+      // estimate QMat offset
+      totalCoord = 0;
+      Kokkos::parallel_scan(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
+          KOKKOS_LAMBDA(const int i, int &update, const bool final) {
+            if (final)
+              relativeCoordOffset(i) = update;
+            const int nodeJ = mFarMatJ(workingNode(i));
+
+            const int indexJStart = mClusterTree(nodeJ, 2);
+            const int indexJEnd = mClusterTree(nodeJ, 3);
+
+            const int workSizeJ = indexJEnd - indexJStart;
+
+            update += workSizeJ;
+          },
+          totalCoord);
+      Kokkos::fence();
+
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+              0, workNodeSize * maxIter),
+          KOKKOS_LAMBDA(const int i) {
+            const int rank = i / maxIter;
+            const int l = i % maxIter;
+
+            const int nodeJ = mFarMatJ(workingNode(rank));
+
+            const int indexJStart = mClusterTree(nodeJ, 2);
+            const int indexJEnd = mClusterTree(nodeJ, 3);
+
+            const int workSizeJ = indexJEnd - indexJStart;
+
+            workingNodeQMatOffset(rank, l) =
+                relativeCoordOffset(rank) * maxIter + workSizeJ * l;
+          });
+      Kokkos::fence();
     }
 
     {
@@ -262,32 +337,41 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       auto dataPtr = resultTensor.data_ptr<float>();
 
       Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, totalCoord * 9),
-          KOKKOS_LAMBDA(const int index) {
-            const int i = index / 9;
-            const int j = index % 9;
-            const int row = j / 3;
-            const int col = j % 3;
-            if (row == col)
-              cMatPool(cMatPoolUsedSize + i, j) = dataPtr[index];
-            else {
-              const int symmetricIndex = i * 9 + col * 3 + row;
-              cMatPool(cMatPoolUsedSize + i, j) =
-                  0.5 * (dataPtr[index] + dataPtr[symmetricIndex]);
-            }
-          });
-      Kokkos::fence();
-
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const int rank) {
+          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
+                                                            Kokkos::AUTO()),
+          KOKKOS_LAMBDA(
+              const Kokkos::TeamPolicy<
+                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
+            const int rank = teamMember.league_rank();
+            const int nodeI = mFarMatI(workingNode(rank));
             const int relativeOffset = relativeCoordOffset(rank);
-            workingNodeCMatOffset(rank, workingNodeIteration(rank)) =
-                cMatPoolUsedSize + relativeOffset;
+
+            const int indexIStart = mClusterTree(nodeI, 2);
+            const int indexIEnd = mClusterTree(nodeI, 3);
+            const int workSizeI = indexIEnd - indexIStart;
+
+            const int ckOffset =
+                workingNodeCMatOffset(rank, workingNodeIteration(rank));
+
+            Kokkos::parallel_for(Kokkos::TeamVectorRange(teamMember, workSizeI),
+                                 [&](const int j) {
+                                   const int index = relativeOffset + j;
+
+                                   for (int row = 0; row < 3; row++)
+                                     for (int col = 0; col < 3; col++)
+                                       if (row == col)
+                                         cMatPool(ckOffset + j, 3 * row + col) =
+                                             dataPtr[index * 9 + 3 * row + col];
+                                       else {
+                                         const int l1 = 3 * row + col;
+                                         const int l2 = 3 * col + row;
+                                         cMatPool(ckOffset + j, l1) =
+                                             0.5 * (dataPtr[index * 9 + l1] +
+                                                    dataPtr[index * 9 + l2]);
+                                       }
+                                 });
           });
       Kokkos::fence();
-
-      cMatPoolUsedSize += totalCoord;
 
       std::chrono::steady_clock::time_point end =
           std::chrono::steady_clock::now();
@@ -318,7 +402,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 workingNodeSelectedColIdx(rank, workingNodeIteration(rank));
 
             Kokkos::parallel_for(
-                Kokkos::TeamThreadRange(teamMember, rowSize * 9),
+                Kokkos::TeamVectorRange(teamMember, rowSize * 9),
                 [&](const int j) {
                   const int index = ckOffset + j / 9;
                   const int k = j % 9;
@@ -542,32 +626,41 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       auto dataPtr = resultTensor.data_ptr<float>();
 
       Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, totalCoord * 9),
-          KOKKOS_LAMBDA(const int index) {
-            const int i = index / 9;
-            const int j = index % 9;
-            const int row = j / 3;
-            const int col = j % 3;
-            if (row == col)
-              qMatPool(qMatPoolUsedSize + i, j) = dataPtr[index];
-            else {
-              const int symmetricIndex = i * 9 + col * 3 + row;
-              qMatPool(qMatPoolUsedSize + i, j) =
-                  0.5 * (dataPtr[index] + dataPtr[symmetricIndex]);
-            }
-          });
-      Kokkos::fence();
-
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-          KOKKOS_LAMBDA(const int rank) {
+          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workNodeSize,
+                                                            Kokkos::AUTO()),
+          KOKKOS_LAMBDA(
+              const Kokkos::TeamPolicy<
+                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
+            const int rank = teamMember.league_rank();
+            const int nodeJ = mFarMatJ(workingNode(rank));
             const int relativeOffset = relativeCoordOffset(rank);
-            workingNodeQMatOffset(rank, workingNodeIteration(rank)) =
-                qMatPoolUsedSize + relativeOffset;
+
+            const int indexJStart = mClusterTree(nodeJ, 2);
+            const int indexJEnd = mClusterTree(nodeJ, 3);
+            const int workSizeJ = indexJEnd - indexJStart;
+
+            const int qkOffset =
+                workingNodeQMatOffset(rank, workingNodeIteration(rank));
+
+            Kokkos::parallel_for(Kokkos::TeamVectorRange(teamMember, workSizeJ),
+                                 [&](const int j) {
+                                   const int index = relativeOffset + j;
+
+                                   for (int row = 0; row < 3; row++)
+                                     for (int col = 0; col < 3; col++)
+                                       if (row == col)
+                                         qMatPool(qkOffset + j, 3 * row + col) =
+                                             dataPtr[index * 9 + 3 * row + col];
+                                       else {
+                                         const int l1 = 3 * row + col;
+                                         const int l2 = 3 * col + row;
+                                         qMatPool(qkOffset + j, 3 * row + col) =
+                                             0.5 * (dataPtr[index * 9 + l1] +
+                                                    dataPtr[index * 9 + l2]);
+                                       }
+                                 });
           });
       Kokkos::fence();
-
-      qMatPoolUsedSize += totalCoord;
 
       std::chrono::steady_clock::time_point end =
           std::chrono::steady_clock::now();
@@ -586,8 +679,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
               const Kokkos::TeamPolicy<
                   Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
             const int rank = teamMember.league_rank();
-            // normalize the QMat
-
             const int nodeJ = mFarMatJ(workingNode(rank));
             const int indexJStart = mClusterTree(nodeJ, 2);
             const int indexJEnd = mClusterTree(nodeJ, 3);
@@ -971,24 +1062,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             const int indexJEnd = mClusterTree(nodeJ, 3);
             const int workSizeJ = indexJEnd - indexJStart;
 
-            // Kokkos::parallel_for(
-            //     Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
-            //     [&](const int i) {
-            //       const int iter = i / 3;
-            //       const int row = i % 3;
-
-            //       const int qkOffset =
-            //           workingNodeQMatOffset(workingNodeRank, iter);
-            //       const int middleMatOffset = 3 * innerNumIter * rank;
-
-            //       double sum = 0.0;
-            //       for (int j = 0; j < workSizeJ; j++)
-            //         for (int k = 0; k < 3; k++)
-            //           sum += qMatPool(qkOffset + j, row * 3 + k) *
-            //                  f(indexJStart + j, k);
-            //       middleMatPool(middleMatOffset + i) = sum;
-            //     });
-
             Kokkos::parallel_for(
                 Kokkos::TeamThreadMDRange(teamMember, innerNumIter * 3,
                                           workSizeJ),
@@ -1070,23 +1143,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
               const int indexIEnd = mClusterTree(nodeI, 3);
               const int workSizeI = indexIEnd - indexIStart;
 
-              // Kokkos::parallel_for(
-              //     Kokkos::TeamThreadRange(teamMember, innerNumIter * 3),
-              //     [&](const int i) {
-              //       const int iter = i / 3;
-              //       const int row = i % 3;
-
-              //       const int ckOffset =
-              //           workingNodeCMatOffset(workingNodeRank, iter);
-              //       const int middleMatOffset = 3 * innerNumIter * rank;
-
-              //       double sum = 0.0;
-              //       for (int j = 0; j < workSizeI; j++)
-              //         for (int k = 0; k < 3; k++)
-              //           sum += cMatPool(ckOffset + j, k * 3 + row) *
-              //                  f(indexIStart + j, k);
-              //       middleMatPool(middleMatOffset + i) = sum;
-              //     });
               Kokkos::parallel_for(
                   Kokkos::TeamThreadMDRange(teamMember, innerNumIter * 3,
                                             workSizeI),
@@ -1148,81 +1204,84 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       }
 
       // post check
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
-          KOKKOS_LAMBDA(const int rank) { uDotCheck(rank) = 0; });
-      Kokkos::fence();
+      if (postCheck) {
+        Kokkos::parallel_for(
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
+            KOKKOS_LAMBDA(const int rank) { uDotCheck(rank) = 0; });
+        Kokkos::fence();
 
-      Kokkos::parallel_for(
-          Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
-                                                            Kokkos::AUTO()),
-          KOKKOS_LAMBDA(
-              const Kokkos::TeamPolicy<
-                  Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
-            const int rank = teamMember.league_rank();
-            const int workingNodeRank = dotProductRank(rank);
+        Kokkos::parallel_for(
+            Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(dotSize,
+                                                              Kokkos::AUTO()),
+            KOKKOS_LAMBDA(
+                const Kokkos::TeamPolicy<
+                    Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
+              const int rank = teamMember.league_rank();
+              const int workingNodeRank = dotProductRank(rank);
 
-            const int nodeI = mFarMatI(dotProductNode(rank));
-            const int indexIStart = mClusterTree(nodeI, 2);
-            const int indexIEnd = mClusterTree(nodeI, 3);
-            const int workSizeI = indexIEnd - indexIStart;
+              const int nodeI = mFarMatI(dotProductNode(rank));
+              const int indexIStart = mClusterTree(nodeI, 2);
+              const int indexIEnd = mClusterTree(nodeI, 3);
+              const int workSizeI = indexIEnd - indexIStart;
 
-            Kokkos::parallel_for(Kokkos::TeamThreadRange(teamMember, workSizeI),
-                                 [&](const int i) {
-                                   double uNorm = 0.0;
-                                   for (int j = 0; j < 3; j++)
-                                     uNorm += pow(u(indexIStart + i, j), 2);
-                                   uNorm = sqrt(uNorm);
-                                   if (uNorm > 1e6)
-                                     uDotCheck(rank) = 1;
-                                 });
-          });
-      Kokkos::fence();
+              Kokkos::parallel_for(
+                  Kokkos::TeamThreadRange(teamMember, workSizeI),
+                  [&](const int i) {
+                    double uNorm = 0.0;
+                    for (int j = 0; j < 3; j++)
+                      uNorm += pow(u(indexIStart + i, j), 2);
+                    uNorm = sqrt(uNorm);
+                    if (uNorm > 1e6)
+                      uDotCheck(rank) = 1;
+                  });
+            });
+        Kokkos::fence();
 
-      int dotCheckSum = 0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
-          KOKKOS_LAMBDA(const int rank, int &tDotCheck) {
-            if (uDotCheck(rank) == 1) {
-              tDotCheck += 1;
+        int dotCheckSum = 0;
+        Kokkos::parallel_reduce(
+            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, dotSize),
+            KOKKOS_LAMBDA(const int rank, int &tDotCheck) {
+              if (uDotCheck(rank) == 1) {
+                tDotCheck += 1;
+              }
+            },
+            Kokkos::Sum<int>(dotCheckSum));
+
+        if (dotCheckSum > 0) {
+          std::cout << "uNorm is too large in rank: " << mMPIRank << std::endl;
+
+          DeviceIndexVector::HostMirror farMatIHost =
+              Kokkos::create_mirror_view(mFarMatI);
+          DeviceIndexVector::HostMirror farMatJHost =
+              Kokkos::create_mirror_view(mFarMatJ);
+          Kokkos::deep_copy(farMatIHost, mFarMatI);
+          Kokkos::deep_copy(farMatJHost, mFarMatJ);
+
+          DeviceIndexMatrix::HostMirror clusterTreeHost =
+              Kokkos::create_mirror_view(mClusterTree);
+          Kokkos::deep_copy(clusterTreeHost, mClusterTree);
+
+          DeviceIntVector::HostMirror dotCheckHost =
+              Kokkos::create_mirror_view(uDotCheck);
+          Kokkos::deep_copy(dotCheckHost, uDotCheck);
+
+          DeviceIntVector::HostMirror dotProductNodeHost =
+              Kokkos::create_mirror_view(dotProductNode);
+          Kokkos::deep_copy(dotProductNodeHost, dotProductNode);
+
+          for (int i = 0; i < dotSize; i++) {
+            if (dotCheckHost(i) == 1) {
+              std::cout
+                  << "farMatI: " << farMatIHost(dotProductNodeHost(i))
+                  << " row size: "
+                  << clusterTreeHost(farMatIHost(dotProductNodeHost(i)), 3) -
+                         clusterTreeHost(farMatIHost(dotProductNodeHost(i)), 2)
+                  << " farMatJ: " << farMatJHost(dotProductNodeHost(i))
+                  << " col size: "
+                  << clusterTreeHost(farMatJHost(dotProductNodeHost(i)), 3) -
+                         clusterTreeHost(farMatJHost(dotProductNodeHost(i)), 2)
+                  << std::endl;
             }
-          },
-          Kokkos::Sum<int>(dotCheckSum));
-
-      if (dotCheckSum > 0) {
-        std::cout << "uNorm is too large in rank: " << mMPIRank << std::endl;
-
-        DeviceIndexVector::HostMirror farMatIHost =
-            Kokkos::create_mirror_view(mFarMatI);
-        DeviceIndexVector::HostMirror farMatJHost =
-            Kokkos::create_mirror_view(mFarMatJ);
-        Kokkos::deep_copy(farMatIHost, mFarMatI);
-        Kokkos::deep_copy(farMatJHost, mFarMatJ);
-
-        DeviceIndexMatrix::HostMirror clusterTreeHost =
-            Kokkos::create_mirror_view(mClusterTree);
-        Kokkos::deep_copy(clusterTreeHost, mClusterTree);
-
-        DeviceIntVector::HostMirror dotCheckHost =
-            Kokkos::create_mirror_view(uDotCheck);
-        Kokkos::deep_copy(dotCheckHost, uDotCheck);
-
-        DeviceIntVector::HostMirror dotProductNodeHost =
-            Kokkos::create_mirror_view(dotProductNode);
-        Kokkos::deep_copy(dotProductNodeHost, dotProductNode);
-
-        for (int i = 0; i < dotSize; i++) {
-          if (dotCheckHost(i) == 1) {
-            std::cout
-                << "farMatI: " << farMatIHost(dotProductNodeHost(i))
-                << " row size: "
-                << clusterTreeHost(farMatIHost(dotProductNodeHost(i)), 3) -
-                       clusterTreeHost(farMatIHost(dotProductNodeHost(i)), 2)
-                << " farMatJ: " << farMatJHost(dotProductNodeHost(i))
-                << " col size: "
-                << clusterTreeHost(farMatJHost(dotProductNodeHost(i)), 3) -
-                       clusterTreeHost(farMatJHost(dotProductNodeHost(i)), 2)
-                << std::endl;
           }
         }
       }
@@ -1237,8 +1296,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     if (newWorkNodeSize == 0) {
       finishedNodeSize += workNodeSize;
       workNodeSize = 0;
-      cMatPoolUsedSize = 0;
-      qMatPoolUsedSize = 0;
 
       if (maxInnerNumIter < innerNumIter) {
         maxInnerNumIter = innerNumIter;
@@ -1277,42 +1334,42 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       // C offset
-      for (int i = 0; i < innerNumIter; i++) {
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              workingNodeCopy(rank) = workingNodeCMatOffset(rank, i);
-            });
-        Kokkos::fence();
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+              0, workNodeSize * maxIter),
+          KOKKOS_LAMBDA(const int i) {
+            workingNodeCopy(i) =
+                workingNodeCMatOffset(i / maxIter, i % maxIter);
+          });
+      Kokkos::fence();
 
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0,
-                                                               newWorkNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              workingNodeCMatOffset(rank, i) =
-                  workingNodeCopy(workingNodeCopyOffset(rank));
-            });
-        Kokkos::fence();
-      }
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+              0, newWorkNodeSize * maxIter),
+          KOKKOS_LAMBDA(const int i) {
+            workingNodeCMatOffset(i / maxIter, i % maxIter) = workingNodeCopy(
+                workingNodeCopyOffset(i / maxIter) * maxIter + i % maxIter);
+          });
+      Kokkos::fence();
 
       // Q offset
-      for (int i = 0; i < innerNumIter; i++) {
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              workingNodeCopy(rank) = workingNodeQMatOffset(rank, i);
-            });
-        Kokkos::fence();
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+              0, workNodeSize * maxIter),
+          KOKKOS_LAMBDA(const int i) {
+            workingNodeCopy(i) =
+                workingNodeQMatOffset(i / maxIter, i % maxIter);
+          });
+      Kokkos::fence();
 
-        Kokkos::parallel_for(
-            Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0,
-                                                               newWorkNodeSize),
-            KOKKOS_LAMBDA(const int rank) {
-              workingNodeQMatOffset(rank, i) =
-                  workingNodeCopy(workingNodeCopyOffset(rank));
-            });
-        Kokkos::fence();
-      }
+      Kokkos::parallel_for(
+          Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(
+              0, newWorkNodeSize * maxIter),
+          KOKKOS_LAMBDA(const int i) {
+            workingNodeQMatOffset(i / maxIter, i % maxIter) = workingNodeCopy(
+                workingNodeCopyOffset(i / maxIter) * maxIter + i % maxIter);
+          });
+      Kokkos::fence();
 
       // selected col
       for (int i = 0; i <= innerNumIter; i++) {
