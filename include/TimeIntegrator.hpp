@@ -42,11 +42,12 @@ public:
   std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
       python_velocity_update;
 
-  void velocity_update(const float t,
-                       const std::vector<Vec3> &position,
-                       const std::vector<Quaternion> &orientation,
-                       std::vector<Vec3> &velocity,
-                       std::vector<Vec3> &angularVelocity) {
+  void velocity_update(
+      const float t,
+      const std::vector<Vec3> &position,
+      [[maybe_unused]] const std::vector<Quaternion> &orientation,
+      std::vector<Vec3> &velocity,
+      std::vector<Vec3> &angularVelocity) {
     // convert
     pybind11::array_t<float> input;
     input.resize({(int)mNumRigidBody, 6});
@@ -124,8 +125,8 @@ public:
   }
 
   void SetPythonVelocityUpdateFunc(
-      std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
-          &func) {
+      const std::function<
+          pybind11::array_t<float>(float, pybind11::array_t<float>)> &func) {
     python_velocity_update = func;
   }
 
@@ -148,7 +149,7 @@ public:
     mOutputStep = outputStep;
   }
 
-  void init(pybind11::array_t<float> initPosition) {
+  void Init(pybind11::array_t<float> initPosition) {
     pybind11::buffer_info buf = initPosition.request();
 
     if (buf.ndim != 2) {
@@ -337,11 +338,12 @@ public:
   std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
       python_velocity_update;
 
-  void velocity_update(const float t,
-                       const std::vector<Vec3> &mPosition,
-                       const std::vector<Quaternion> &mOrientation,
-                       std::vector<Vec3> &velocity,
-                       std::vector<Vec3> &angular_velocity) {
+  void velocity_update(
+      const float t,
+      const std::vector<Vec3> &mPosition,
+      [[maybe_unused]] const std::vector<Quaternion> &mOrientation,
+      std::vector<Vec3> &velocity,
+      std::vector<Vec3> &angularVelocity) {
     // convert
     pybind11::array_t<float> input;
     input.resize({(int)mNumRigidBody, 6});
@@ -375,8 +377,8 @@ public:
 #pragma omp parallel for schedule(static)
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
-        mVelocity[num][j] = result_data(num, j);
-        angular_velocity[num][j] = result_data(num, j + 3);
+        velocity[num][j] = result_data(num, j);
+        angularVelocity[num][j] = result_data(num, j + 3);
       }
     }
   }
@@ -439,27 +441,27 @@ public:
   }
 
   void SetPythonVelocityUpdateFunc(
-      std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
-          &func) {
+      const std::function<
+          pybind11::array_t<float>(float, pybind11::array_t<float>)> &func) {
     python_velocity_update = func;
   }
 
-  void SetXlim(pybind11::list xlim) {
-    domain_limit[0][0] = pybind11::cast<float>(xlim[0]);
-    domain_limit[1][0] = pybind11::cast<float>(xlim[1]);
+  void SetXLim(pybind11::list xLim) {
+    domain_limit[0][0] = pybind11::cast<float>(xLim[0]);
+    domain_limit[1][0] = pybind11::cast<float>(xLim[1]);
   }
 
-  void SetYlim(pybind11::list ylim) {
-    domain_limit[0][1] = pybind11::cast<float>(ylim[0]);
-    domain_limit[1][1] = pybind11::cast<float>(ylim[1]);
+  void SetYLim(pybind11::list yLim) {
+    domain_limit[0][1] = pybind11::cast<float>(yLim[0]);
+    domain_limit[1][1] = pybind11::cast<float>(yLim[1]);
   }
 
-  void SetZlim(pybind11::list zlim) {
-    domain_limit[0][2] = pybind11::cast<float>(zlim[0]);
-    domain_limit[1][2] = pybind11::cast<float>(zlim[1]);
+  void SetZLim(pybind11::list zLim) {
+    domain_limit[0][2] = pybind11::cast<float>(zLim[0]);
+    domain_limit[1][2] = pybind11::cast<float>(zLim[1]);
   }
 
-  void init(pybind11::array_t<float> init_position) {
+  void Init(pybind11::array_t<float> init_position) {
     pybind11::buffer_info buf = init_position.request();
 
     if (buf.ndim != 2) {
@@ -485,11 +487,11 @@ public:
     }
   }
 
-  int get_mFuncCount() {
+  int GetFuncCount() {
     return mFuncCount;
   }
 
-  void run() {
+  void Run() {
     mFuncCount = 0;
     float t = 0;
     float h0 = mTimeStep;

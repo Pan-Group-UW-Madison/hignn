@@ -38,19 +38,19 @@ PYBIND11_MODULE(hignn, m) {
       .def("set_y_lim", &ExplicitEuler::SetYLim)
       .def("set_z_lim", &ExplicitEuler::SetZLim)
       .def("set_output_step", &ExplicitEuler::SetOutputStep)
-      .def("initialize", &ExplicitEuler::init)
+      .def("initialize", &ExplicitEuler::Init)
       .def("run", &ExplicitEuler::Run);
 
   py::class_<ExplicitRk4>(m, "ExplicitRk4")
       .def(py::init())
-      .def("set_time_step", &ExplicitRk4::SetInitialTimeStep);
-  //   .def("set_threshold", &ExplicitRk4::SetThreshold)
-  //   .def("set_finalTime", &ExplicitRk4::SetFinalTime)
-  //   .def("set_num_rigid_body", &ExplicitRk4::SetNumRigidBody)
-  //   .def("set_velocity_func", &ExplicitRk4::SetPythonVelocityUpdateFunc)
-  //   .def("set_x_lim", &ExplicitEuler::SetXlim)
-  //   .def("set_y_lim", &ExplicitEuler::SetYlim)
-  //   .def("set_z_lim", &ExplicitEuler::SetZlim)
-  //   .def("initialize", &ExplicitRk4::init)
-  //   .def("run", &ExplicitRk4::run);
+      .def("set_time_step", &ExplicitRk4::SetInitialTimeStep)
+      .def("set_threshold", &ExplicitRk4::SetThreshold)
+      .def("set_finalTime", &ExplicitRk4::SetFinalTime)
+      .def("set_num_rigid_body", &ExplicitRk4::SetNumRigidBody)
+      .def("set_velocity_func", &ExplicitRk4::SetPythonVelocityUpdateFunc)
+      .def("set_x_lim", &ExplicitRk4::SetXLim)
+      .def("set_y_lim", &ExplicitRk4::SetYLim)
+      .def("set_z_lim", &ExplicitRk4::SetZLim)
+      .def("initialize", &ExplicitRk4::Init)
+      .def("run", &ExplicitRk4::Run);
 }

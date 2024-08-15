@@ -11,8 +11,8 @@ os.system("clear")
 def velocity_update(t, position):
     if rank == 0:
         print("t = {t:.4f}".format(t = t))
-    hignn_model.update_coord(position)
-    velocity = np.zeros(position.shape, dtype=np.float32)
+    hignn_model.update_coord(position[:, 0:3])
+    velocity = np.zeros((position.shape[0], 3), dtype=np.float32)
     force = np.zeros((position.shape[0], 3), dtype=np.float32)
     force[:, 2] = -1.0
     
@@ -26,7 +26,7 @@ if __name__ == '__main__':
     
     hignn.Init()
     
-    N = 10
+    N = 5
     nx = N
     ny = N
     nz = N
@@ -58,16 +58,16 @@ if __name__ == '__main__':
     hignn_model.set_max_far_dot_work_node_size(10000)
     hignn_model.set_max_relative_coord(1000000)
     
-    time_integrator = hignn.ExplicitEuler()
+    # time_integrator = hignn.ExplicitEuler()
     
-    time_integrator.set_time_step(0.0001)
-    time_integrator.set_final_time(0.0002)
-    time_integrator.set_num_rigid_body(NN)
-    time_integrator.set_output_step(1)
+    # time_integrator.set_time_step(0.0001)
+    # time_integrator.set_final_time(0.0002)
+    # time_integrator.set_num_rigid_body(NN)
+    # time_integrator.set_output_step(1)
     
-    time_integrator.set_velocity_func(velocity_update)
-    time_integrator.initialize(X)
-    time_integrator.run()
+    # time_integrator.set_velocity_func(velocity_update)
+    # time_integrator.initialize(X)
+    # time_integrator.run()
     
     rank_range = np.linspace(0, NN, comm.Get_size() + 1, dtype=np.int32)
     
@@ -83,24 +83,24 @@ if __name__ == '__main__':
 
     # explicit euler time integrator
     # equivalent to line 69
-    # for i in range(2):
-    #     with h5py.File('Result/pos'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
-    #         f.create_dataset('pos', data=X[rank_range[rank]:rank_range[rank+1], :])
+    for i in range(2):
+        with h5py.File('Result/pos'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
+            f.create_dataset('pos', data=X[rank_range[rank]:rank_range[rank+1], :])
         
-    #     tt1 = time.time()
-    #     V = velocity_update(ts, X)
-    #     if rank == 0:
-    #         print("Time for velocity_update: {t:.4f}s".format(t = time.time() - tt1))
+        tt1 = time.time()
+        V = velocity_update(ts, X)
+        if rank == 0:
+            print("Time for velocity_update: {t:.4f}s".format(t = time.time() - tt1))
 
-    #     with h5py.File('Result/vel'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
-    #         f.create_dataset('vel', data=V[rank_range[rank]:rank_range[rank+1], :])
+        with h5py.File('Result/vel'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
+            f.create_dataset('vel', data=V[rank_range[rank]:rank_range[rank+1], :])
         
-    #     X = X + dt * V
-    #     ts = ts + dt
+        X = X + dt * V
+        ts = ts + dt
         
-    #     ite = ite + 1
-    #     if rank == 0:
-    #         print()            
+        ite = ite + 1
+        if rank == 0:
+            print()            
 
     # if rank == 0:
     #     print("Time for simulation: {t:.4f}s".format(t = time.time() - t1))
