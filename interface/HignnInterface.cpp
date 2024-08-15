@@ -1,4 +1,5 @@
 #include "HignnModel.hpp"
+#include "TimeIntegrator.hpp"
 
 template <typename... Args>
 using overload_cast_ = pybind11::detail::overload_cast_impl<Args...>;
@@ -11,33 +12,35 @@ PYBIND11_MODULE(hignn, m) {
   m.def("Init", &Init, "Initialize MPI and Kokkos");
   m.def("Finalize", &Finalize, "Finalize MPI and Kokkos");
 
-  py::class_<HignnModel>(m, "HignnModel")
+  py::class_<HignnModel>(m, "hignn_model")
       .def(py::init<pybind11::array_t<float> &, int>())
-      .def("LoadTwoBodyModel", &HignnModel::LoadTwoBodyModel)
-      .def("LoadThreeBodyModel", &HignnModel::LoadThreeBodyModel)
-      .def("SetEpsilon", &HignnModel::SetEpsilon)
-      .def("SetMaxIter", &HignnModel::SetMaxIter)
-      .def("SetMatPoolSizeFactor", &HignnModel::SetMatPoolSizeFactor)
-      .def("SetMaxFarDotWorkNodeSize", &HignnModel::SetMaxFarDotWorkNodeSize)
-      .def("SetMaxRelativeCoord", &HignnModel::SetMaxRelativeCoord)
-      .def("SetPostCheckFlag", &HignnModel::SetPostCheckFlag)
-      .def("SetUseSymmetryFlag", &HignnModel::SetUseSymmetryFlag)
-      .def("SetMaxFarFieldDistance", &HignnModel::SetMaxFarFieldDistance)
-      .def("UpdateCoord", &HignnModel::UpdateCoord)
-      .def("Dot", &HignnModel::Dot);
+      .def("load_two_body_model", &HignnModel::LoadTwoBodyModel)
+      .def("load_three_body_model", &HignnModel::LoadThreeBodyModel)
+      .def("set_epsilon", &HignnModel::SetEpsilon)
+      .def("set_max_iter", &HignnModel::SetMaxIter)
+      .def("set_mat_pool_size_factor", &HignnModel::SetMatPoolSizeFactor)
+      .def("set_max_far_dot_work_node_size", &HignnModel::SetMaxFarDotWorkNodeSize)
+      .def("set_max_relative_coord", &HignnModel::SetMaxRelativeCoord)
+      .def("set_post_check_flag", &HignnModel::SetPostCheckFlag)
+      .def("set_use_symmetry_flag", &HignnModel::SetUseSymmetryFlag)
+      .def("set_max_far_field_distance", &HignnModel::SetMaxFarFieldDistance)
+      .def("update_coord", &HignnModel::UpdateCoord)
+      .def("dot", &HignnModel::Dot);
 
-  //   py::class_<ExplicitEuler>(m, "ExplicitEuler")
-  //       .def(py::init())
-  //       .def("setTimeStep", &ExplicitEuler::set_time_step)
-  //       .def("setFinalTime", &ExplicitEuler::set_final_time)
-  //       .def("setNumRigidBody", &ExplicitEuler::set_num_rigid_body)
-  //       .def("setOutputStep", &ExplicitEuler::set_output_step)
-  //       .def("initialize", &ExplicitEuler::init)
-  //       .def("setVelocityFunc",
-  //       &ExplicitEuler::set_python_velocity_update_func) .def("setXLim",
-  //       &ExplicitEuler::set_xlim) .def("setYLim", &ExplicitEuler::set_ylim)
-  //       .def("setZLim", &ExplicitEuler::set_zlim)
-  //       .def("run", &ExplicitEuler::run);
+  // Making Py class by myself
+
+  py::class_<ExplicitEuler>(m, "explicit_euler")
+            .def(py::init())
+            .def("set_time_step", &ExplicitEuler::SetTimeStep)
+            .def("set_final_time", &ExplicitEuler::SetFinalTime)
+            .def("set_num_rigid_body", &ExplicitEuler::SetNumRigidBody)
+            .def("set_velocity_func", &ExplicitEuler::SetPythonVelocityUpdateFunc) 
+            .def("set_x_lim", &ExplicitEuler::SetXlim) 
+            .def("set_y_lim", &ExplicitEuler::SetYlim)
+            .def("set_z_lim", &ExplicitEuler::SetZlim)
+            .def("set_output_step", &ExplicitEuler::SetOutputStep)
+            .def("initialize", &ExplicitEuler::init)
+            .def("run", &ExplicitEuler::run);
 
   //   py::class_<neighbor_lists>(m, "BodyEdgeInfo")
   //       .def(py::init())
@@ -76,16 +79,28 @@ PYBIND11_MODULE(hignn, m) {
   //            overload_cast_<pybind11::array_t<float>>()(
   //                &neighbor_lists::get_three_body_edge_attr));
 
-  //   py::class_<explicit_RK4>(m, "ExplicitRK4")
-  //       .def(py::init())
-  //       .def("setTimeStep", &explicit_RK4::set_initial_time_step)
-  //       .def("setThreshold", &explicit_RK4::set_threshold)
-  //       .def("setFinalTime", &explicit_RK4::set_final_time)
-  //       .def("setNumRigidBody", &explicit_RK4::set_num_rigid_body)
-  //       .def("initialize", &explicit_RK4::init)
-  //       .def("setVelocityFunc",
-  //       &explicit_RK4::set_python_velocity_update_func) .def("setXLim",
-  //       &explicit_RK4::set_xlim) .def("setYLim", &explicit_RK4::set_ylim)
-  //       .def("setZLim", &explicit_RK4::set_zlim)
-  //       .def("run", &explicit_RK4::run);
+      py::class_<ExplicitRk4>(m, "ExplicitRk4")
+          .def(py:init())
+          .def("set_time_step", &ExplicitRk4::set_Initial_TimeStep)
+          .def("set_threshold", &ExplicitRk4::SetThreshold)
+          .def("set_finalTime", &ExplicitRk4::SetFinalTime)
+          .def("set_num_rigid_body", &ExplicitRk4::SetNumRigidBody)
+          .def("set_velocity_func", &ExplicitRk4::SetPythonVelocityUpdateFunc) 
+          .def("set_x_lim", &ExplicitEuler::SetXlim) 
+          .def("set_y_lim", &ExplicitEuler::SetYlim)
+          .def("set_z_lim", &ExplicitEuler::SetZlim)
+          .def("initialize", &ExplicitRk4::init)
+          .def("run", &ExplicitRk4::run);
+
+
+      // py::class_<ThreeBodyEdgeInfo>(m, "ThreeBodyEdgeInfo")
+      //       .def(py::init())
+      //       .def("setTwoBodyEpsilon", &Three_Body_Edge_Info::set_two_body_epsilon)
+      //       .def("setThreeBodyEpsilon", &Three_Body_Edge_Info::set_three_body_epsilon)
+      //       .def("buildTwoBodyEdgeInfo", &Three_Body_Edge_Info::build_two_body_info)
+      //       .def("setPeriodic", overload_cast_<bool>()(&Three_Body_Edge_Info::set_periodic))
+      //       .def("setDomain", overload_cast_<pybind11::array_t<float>>()( &Three_Body_Edge_Info::set_domain));
+            
+
+
 }

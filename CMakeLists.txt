@@ -25,7 +25,8 @@ include_directories(
 )
 include_directories("${PROJECT_SOURCE_DIR}/eigen")
 
-add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr -Wno-div-by-zero)
+add_compile_options(-O3 -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr -Wno-div-by-zero)
+# -Werror
 
 # link/include
 file(GLOB_RECURSE sources ${PROJECT_SOURCE_DIR}/src/*.cpp)

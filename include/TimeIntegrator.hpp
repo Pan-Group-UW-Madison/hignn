@@ -17,7 +17,7 @@
 #include <mpi.h>
 
 class ExplicitEuler {
-private:
+public:
   float mTimeStep;
   float mFinalTime;
 
@@ -100,15 +100,15 @@ public:
     domain_limit[1][2] = 1;
   }
 
-  void set_time_step(float _mTimeStep) {
+  void SetTimeStep(float _mTimeStep) {
     mTimeStep = _mTimeStep;
   }
 
-  void set_final_time(float _mFinalTime) {
+  void SetFinalTime(float _mFinalTime) {
     mFinalTime = _mFinalTime;
   }
 
-  void set_num_rigid_body(std::size_t _mNumRigidBody) {
+  void SetNumRigidBody(std::size_t _mNumRigidBody) {
     mNumRigidBody = _mNumRigidBody;
 
     position0.resize(mNumRigidBody);
@@ -123,28 +123,28 @@ public:
     position_offset.resize(mNumRigidBody);
   }
 
-  void set_python_velocity_update_func(
+  void SetPythonVelocityUpdateFunc(
       std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
           &func) {
     python_velocity_update = func;
   }
 
-  void set_xlim(pybind11::list xlim) {
+  void SetXlim(pybind11::list xlim) {
     domain_limit[0][0] = pybind11::cast<float>(xlim[0]);
     domain_limit[1][0] = pybind11::cast<float>(xlim[1]);
   }
 
-  void set_ylim(pybind11::list ylim) {
+  void SetYlim(pybind11::list ylim) {
     domain_limit[0][1] = pybind11::cast<float>(ylim[0]);
     domain_limit[1][1] = pybind11::cast<float>(ylim[1]);
   }
 
-  void set_zlim(pybind11::list zlim) {
+  void SetZlim(pybind11::list zlim) {
     domain_limit[0][2] = pybind11::cast<float>(zlim[0]);
     domain_limit[1][2] = pybind11::cast<float>(zlim[1]);
   }
 
-  void set_output_step(int _mOutputStep) {
+  void SetOutputStep(int _mOutputStep) {
     mOutputStep = _mOutputStep;
   }
 
@@ -249,7 +249,7 @@ public:
 };
 
 class ExplicitRk4 {
-private:
+public:
   // constants for integration
   const float a21 = static_cast<float>(1) / static_cast<float>(5);
 
@@ -395,19 +395,19 @@ public:
     domain_limit[1][2] = 1;
   }
 
-  void set_initial_mTimeStep(float _mTimeStep) {
+  void SetInitialTimeStep(float _mTimeStep) {
     mTimeStep = _mTimeStep;
   }
 
-  void set_threshold(float _threshold) {
+  void SetThreshold(float _threshold) {
     threshold = _threshold;
   }
 
-  void set_mFinalTime(float _mFinalTime) {
+  void SetFinalTime(float _mFinalTime) {
     mFinalTime = _mFinalTime;
   }
 
-  void set_mNumRigidBody(std::size_t _mNumRigidBody) {
+  void SetNumRigidBody(std::size_t _mNumRigidBody) {
     mNumRigidBody = _mNumRigidBody;
 
     position0.resize(mNumRigidBody);
@@ -438,23 +438,23 @@ public:
     position_offset.resize(mNumRigidBody);
   }
 
-  void set_python_velocity_update_func(
+  void SetPythonVelocityUpdateFunc(
       std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
           &func) {
     python_velocity_update = func;
   }
 
-  void set_xlim(pybind11::list xlim) {
+  void SetXlim(pybind11::list xlim) {
     domain_limit[0][0] = pybind11::cast<float>(xlim[0]);
     domain_limit[1][0] = pybind11::cast<float>(xlim[1]);
   }
 
-  void set_ylim(pybind11::list ylim) {
+  void SetYlim(pybind11::list ylim) {
     domain_limit[0][1] = pybind11::cast<float>(ylim[0]);
     domain_limit[1][1] = pybind11::cast<float>(ylim[1]);
   }
 
-  void set_zlim(pybind11::list zlim) {
+  void SetZlim(pybind11::list zlim) {
     domain_limit[0][2] = pybind11::cast<float>(zlim[0]);
     domain_limit[1][2] = pybind11::cast<float>(zlim[1]);
   }
