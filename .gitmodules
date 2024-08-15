@@ -2,6 +2,6 @@
 	path = extern/eigen
 	url = https://gitlab.com/libeigen/eigen.git
 
-[submodule "extern/pybind11"]
-	path = extern/pybind11
+[submodule "pybind11"]
+	path = pybind11
 	url = https://github.com/pybind/pybind11.git
