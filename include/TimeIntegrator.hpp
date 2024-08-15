@@ -90,7 +90,7 @@ public:
   ExplicitEuler()
       : mTimeStep(1.0),
         mFinalTime(10.0),
-        mOutputFilePrefix("result/output"),
+        mOutputFilePrefix("Result/output"),
         mOutputStep(1) {
     mDomainLimit[0][0] = -1;
     mDomainLimit[1][0] = 1;

@@ -17,13 +17,13 @@ set(CMAKE_CXX_EXTENSIONS off)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT result)
 
-add_subdirectory(./pybind11)
+add_subdirectory(./extern/pybind11)
 
 include_directories(
     include
     ${MPI_INCLUDE_PATH}
 )
-include_directories("${PROJECT_SOURCE_DIR}/eigen")
+include_directories("${PROJECT_SOURCE_DIR}/extern/eigen")
 
 add_compile_options(-O3 -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr -Wno-div-by-zero)
 # -Werror
