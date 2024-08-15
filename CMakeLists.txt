@@ -2,9 +2,11 @@ cmake_minimum_required(VERSION 3.16)
 project(hignn LANGUAGES C CXX)
 
 # find dependencies
+set (PYTHON_EXECUTABLE "/usr/bin/python3")
+
+find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(Torch REQUIRED)
 find_package(Kokkos REQUIRED)
-find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(TBB REQUIRED)
 find_package(MPI REQUIRED)
 
@@ -23,7 +25,6 @@ include_directories(
     include
     ${MPI_INCLUDE_PATH}
 )
-include_directories("${PROJECT_SOURCE_DIR}/extern/eigen")
 
 add_compile_options(-O3 -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr -Wno-div-by-zero)
 # -Werror
