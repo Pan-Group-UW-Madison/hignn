@@ -1,5 +1,5 @@
-#ifndef _TimeIntegrator_HPP_
-#define _TimeIntegrator_HPP_
+#ifndef _TimeIntegrator_Hpp_
+#define _TimeIntegrator_Hpp_
 
 #include <pybind11/functional.h>
 #include <pybind11/numpy.h>
@@ -27,17 +27,17 @@ public:
   int mOutputStep;
   std::size_t mNumRigidBody;
 
-  std::vector<Vec3> position0;
-  std::vector<Quaternion> orientation0;
+  std::vector<Vec3> mPosition0;
+  std::vector<Quaternion> mOrientation0;
 
-  std::vector<Vec3> position;
-  std::vector<Quaternion> orientation;
+  std::vector<Vec3> mPosition;
+  std::vector<Quaternion> mOrientation;
 
-  std::vector<Vec3> velocity;
-  std::vector<Vec3> angular_velocity;
+  std::vector<Vec3> mVelocity;
+  std::vector<Vec3> mAngularVelocity;
 
-  Vec3 domain_limit[2];
-  std::vector<Vec3> position_offset;
+  Vec3 mDomainLimit[2];
+  std::vector<Vec3> mPositionOffset;
 
   std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
       python_velocity_update;
@@ -46,7 +46,7 @@ public:
                        const std::vector<Vec3> &position,
                        const std::vector<Quaternion> &orientation,
                        std::vector<Vec3> &velocity,
-                       std::vector<Vec3> &angular_velocity) {
+                       std::vector<Vec3> &angularVelocity) {
     // convert
     pybind11::array_t<float> input;
     input.resize({(int)mNumRigidBody, 6});
@@ -57,17 +57,17 @@ public:
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
         // periodic boundary condition
-        if (position[num][j] > domain_limit[1][j]) {
-          position_offset[num][j] = domain_limit[0][j] - domain_limit[1][j];
-        } else if (position[num][j] < domain_limit[0][j]) {
-          position_offset[num][j] = domain_limit[1][j] - domain_limit[0][j];
+        if (position[num][j] > mDomainLimit[1][j]) {
+          mPositionOffset[num][j] = mDomainLimit[0][j] - mDomainLimit[1][j];
+        } else if (position[num][j] < mDomainLimit[0][j]) {
+          mPositionOffset[num][j] = mDomainLimit[1][j] - mDomainLimit[0][j];
         } else {
-          position_offset[num][j] = 0.0;
+          mPositionOffset[num][j] = 0.0;
         }
-        input_data(num, j) = position[num][j] + position_offset[num][j];
+        input_data(num, j) = position[num][j] + mPositionOffset[num][j];
       }
       float row, pitch, yaw;
-      orientation[num].to_euler_angles(row, pitch, yaw);
+      mOrientation[num].to_euler_angles(row, pitch, yaw);
       input_data(num, 3) = row;
       input_data(num, 4) = pitch;
       input_data(num, 5) = yaw;
@@ -81,7 +81,7 @@ public:
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
         velocity[num][j] = result_data(num, j);
-        angular_velocity[num][j] = result_data(num, j + 3);
+        angularVelocity[num][j] = result_data(num, j + 3);
       }
     }
   }
@@ -92,35 +92,35 @@ public:
         mFinalTime(10.0),
         mOutputFilePrefix("result/output"),
         mOutputStep(1) {
-    domain_limit[0][0] = -1;
-    domain_limit[1][0] = 1;
-    domain_limit[0][1] = -1;
-    domain_limit[1][1] = 1;
-    domain_limit[0][2] = -1;
-    domain_limit[1][2] = 1;
+    mDomainLimit[0][0] = -1;
+    mDomainLimit[1][0] = 1;
+    mDomainLimit[0][1] = -1;
+    mDomainLimit[1][1] = 1;
+    mDomainLimit[0][2] = -1;
+    mDomainLimit[1][2] = 1;
   }
 
-  void SetTimeStep(float _mTimeStep) {
-    mTimeStep = _mTimeStep;
+  void SetTimeStep(const float timeStep) {
+    mTimeStep = timeStep;
   }
 
-  void SetFinalTime(float _mFinalTime) {
-    mFinalTime = _mFinalTime;
+  void SetFinalTime(const float finalTime) {
+    mFinalTime = finalTime;
   }
 
-  void SetNumRigidBody(std::size_t _mNumRigidBody) {
-    mNumRigidBody = _mNumRigidBody;
+  void SetNumRigidBody(const std::size_t numRigidBody) {
+    mNumRigidBody = numRigidBody;
 
-    position0.resize(mNumRigidBody);
-    orientation0.resize(mNumRigidBody);
+    mPosition0.resize(mNumRigidBody);
+    mOrientation0.resize(mNumRigidBody);
 
-    position.resize(mNumRigidBody);
-    orientation.resize(mNumRigidBody);
+    mPosition.resize(mNumRigidBody);
+    mOrientation.resize(mNumRigidBody);
 
-    velocity.resize(mNumRigidBody);
-    angular_velocity.resize(mNumRigidBody);
+    mVelocity.resize(mNumRigidBody);
+    mAngularVelocity.resize(mNumRigidBody);
 
-    position_offset.resize(mNumRigidBody);
+    mPositionOffset.resize(mNumRigidBody);
   }
 
   void SetPythonVelocityUpdateFunc(
@@ -129,56 +129,56 @@ public:
     python_velocity_update = func;
   }
 
-  void SetXlim(pybind11::list xlim) {
-    domain_limit[0][0] = pybind11::cast<float>(xlim[0]);
-    domain_limit[1][0] = pybind11::cast<float>(xlim[1]);
+  void SetXLim(pybind11::list xLim) {
+    mDomainLimit[0][0] = pybind11::cast<float>(xLim[0]);
+    mDomainLimit[1][0] = pybind11::cast<float>(xLim[1]);
   }
 
-  void SetYlim(pybind11::list ylim) {
-    domain_limit[0][1] = pybind11::cast<float>(ylim[0]);
-    domain_limit[1][1] = pybind11::cast<float>(ylim[1]);
+  void SetYLim(pybind11::list yLim) {
+    mDomainLimit[0][1] = pybind11::cast<float>(yLim[0]);
+    mDomainLimit[1][1] = pybind11::cast<float>(yLim[1]);
   }
 
-  void SetZlim(pybind11::list zlim) {
-    domain_limit[0][2] = pybind11::cast<float>(zlim[0]);
-    domain_limit[1][2] = pybind11::cast<float>(zlim[1]);
+  void SetZLim(pybind11::list zLim) {
+    mDomainLimit[0][2] = pybind11::cast<float>(zLim[0]);
+    mDomainLimit[1][2] = pybind11::cast<float>(zLim[1]);
   }
 
-  void SetOutputStep(int _mOutputStep) {
-    mOutputStep = _mOutputStep;
+  void SetOutputStep(const int outputStep) {
+    mOutputStep = outputStep;
   }
 
-  void init(pybind11::array_t<float> init_position) {
-    pybind11::buffer_info buf = init_position.request();
+  void init(pybind11::array_t<float> initPosition) {
+    pybind11::buffer_info buf = initPosition.request();
 
     if (buf.ndim != 2) {
       throw std::runtime_error(
           "Number of dimensions of input positions must be two");
     }
 
-    if ((std::size_t)init_position.shape(0) != mNumRigidBody) {
-      throw std::runtime_error("Inconsistent number of rigid bodys");
+    if ((std::size_t)initPosition.shape(0) != mNumRigidBody) {
+      throw std::runtime_error("Inconsistent number of rigid bodies");
     }
 
-    auto data = init_position.unchecked<2>();
+    auto data = initPosition.unchecked<2>();
 
     // deep copy
 #pragma omp parallel for schedule(static)
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++)
-        position0[num][j] = data(num, j);
-      orientation0[num] = Quaternion(data(num, 3), data(num, 4), data(num, 5));
+        mPosition0[num][j] = data(num, j);
+      mOrientation0[num] = Quaternion(data(num, 3), data(num, 4), data(num, 5));
 
-      position[num] = position0[num];
-      orientation[num] = orientation0[num];
+      mPosition[num] = mPosition0[num];
+      mOrientation[num] = mOrientation0[num];
     }
   }
 
-  int get_mFuncCount() {
+  int GetFuncCount() {
     return mFuncCount;
   }
 
-  void run() {
+  void Run() {
     mFuncCount = 0;
     float t = 0;
     float h0 = mTimeStep;
@@ -192,7 +192,7 @@ public:
       std::stringstream outputStream;
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
         for (int i = 0; i < 3; i++)
-          outputStream << position[num][i] << '\t';
+          outputStream << mPosition[num][i] << '\t';
       }
       outputStream << std::endl;
       output_file << outputStream.str();
@@ -203,23 +203,23 @@ public:
       mFuncCount++;
       float dt = std::min(h0, mFinalTime - t);
 
-      velocity_update(t + dt, position, orientation, velocity,
-                      angular_velocity);
+      velocity_update(t + dt, mPosition, mOrientation, mVelocity,
+                      mAngularVelocity);
 
 #pragma omp parallel for schedule(static)
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
-        position[num] = position[num] + velocity[num] * dt;
-        orientation[num].Cross(orientation[num],
-                               Quaternion(angular_velocity[num], dt));
+        mPosition[num] = mPosition[num] + mVelocity[num] * dt;
+        mOrientation[num].Cross(mOrientation[num],
+                                Quaternion(mAngularVelocity[num], dt));
 
         for (int j = 0; j < 3; j++) {
           // periodic boundary condition
-          if (position[num][j] > domain_limit[1][j]) {
-            position_offset[num][j] = domain_limit[0][j] - domain_limit[1][j];
-          } else if (position[num][j] < domain_limit[0][j]) {
-            position_offset[num][j] = domain_limit[1][j] - domain_limit[0][j];
+          if (mPosition[num][j] > mDomainLimit[1][j]) {
+            mPositionOffset[num][j] = mDomainLimit[0][j] - mDomainLimit[1][j];
+          } else if (mPosition[num][j] < mDomainLimit[0][j]) {
+            mPositionOffset[num][j] = mDomainLimit[1][j] - mDomainLimit[0][j];
           } else {
-            position_offset[num][j] = 0.0;
+            mPositionOffset[num][j] = 0.0;
           }
         }
       }
@@ -233,7 +233,7 @@ public:
           std::stringstream outputStream;
           for (std::size_t num = 0; num < mNumRigidBody; num++) {
             for (int i = 0; i < 3; i++)
-              outputStream << position[num][i] << '\t';
+              outputStream << mPosition[num][i] << '\t';
           }
           outputStream << std::endl;
           output_file << outputStream.str();
@@ -242,7 +242,7 @@ public:
       }
 
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
-        position[num] = position[num] + position_offset[num];
+        mPosition[num] = mPosition[num] + mPositionOffset[num];
       }
     }
   }
@@ -303,13 +303,13 @@ public:
 
   std::size_t mNumRigidBody;
 
-  std::vector<Vec3> position0;
-  std::vector<Quaternion> orientation0;
+  std::vector<Vec3> mPosition0;
+  std::vector<Quaternion> mOrientation0;
 
-  std::vector<Vec3> position;
-  std::vector<Quaternion> orientation;
+  std::vector<Vec3> mPosition;
+  std::vector<Quaternion> mOrientation;
 
-  std::vector<Vec3> velocity;
+  std::vector<Vec3> mVelocity;
   std::vector<Vec3> angular_velocity;
 
   std::vector<Vec3> velocity_k1;
@@ -338,8 +338,8 @@ public:
       python_velocity_update;
 
   void velocity_update(const float t,
-                       const std::vector<Vec3> &position,
-                       const std::vector<Quaternion> &orientation,
+                       const std::vector<Vec3> &mPosition,
+                       const std::vector<Quaternion> &mOrientation,
                        std::vector<Vec3> &velocity,
                        std::vector<Vec3> &angular_velocity) {
     // convert
@@ -352,17 +352,17 @@ public:
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
         // periodic boundary condition
-        if (position[num][j] > domain_limit[1][j]) {
+        if (mPosition[num][j] > domain_limit[1][j]) {
           position_offset[num][j] = domain_limit[0][j] - domain_limit[1][j];
-        } else if (position[num][j] < domain_limit[0][j]) {
+        } else if (mPosition[num][j] < domain_limit[0][j]) {
           position_offset[num][j] = domain_limit[1][j] - domain_limit[0][j];
         } else {
           position_offset[num][j] = 0.0;
         }
-        input_data(num, j) = position[num][j] + position_offset[num][j];
+        input_data(num, j) = mPosition[num][j] + position_offset[num][j];
       }
       float row, pitch, yaw;
-      orientation[num].to_euler_angles(row, pitch, yaw);
+      mOrientation[num].to_euler_angles(row, pitch, yaw);
       input_data(num, 3) = row;
       input_data(num, 4) = pitch;
       input_data(num, 5) = yaw;
@@ -375,7 +375,7 @@ public:
 #pragma omp parallel for schedule(static)
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
-        velocity[num][j] = result_data(num, j);
+        mVelocity[num][j] = result_data(num, j);
         angular_velocity[num][j] = result_data(num, j + 3);
       }
     }
@@ -410,13 +410,13 @@ public:
   void SetNumRigidBody(std::size_t _mNumRigidBody) {
     mNumRigidBody = _mNumRigidBody;
 
-    position0.resize(mNumRigidBody);
-    orientation0.resize(mNumRigidBody);
+    mPosition0.resize(mNumRigidBody);
+    mOrientation0.resize(mNumRigidBody);
 
-    position.resize(mNumRigidBody);
-    orientation.resize(mNumRigidBody);
+    mPosition.resize(mNumRigidBody);
+    mOrientation.resize(mNumRigidBody);
 
-    velocity.resize(mNumRigidBody);
+    mVelocity.resize(mNumRigidBody);
     angular_velocity.resize(mNumRigidBody);
 
     velocity_k1.resize(mNumRigidBody);
@@ -477,11 +477,11 @@ public:
 #pragma omp parallel for schedule(static)
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++)
-        position0[num][j] = data(num, j);
-      orientation0[num] = Quaternion(data(num, 3), data(num, 4), data(num, 5));
+        mPosition0[num][j] = data(num, j);
+      mOrientation0[num] = Quaternion(data(num, 3), data(num, 4), data(num, 5));
 
-      position[num] = position0[num];
-      orientation[num] = orientation0[num];
+      mPosition[num] = mPosition0[num];
+      mOrientation[num] = mOrientation0[num];
     }
   }
 
@@ -498,22 +498,22 @@ public:
     output_file << 0 << '\t';
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int i = 0; i < 3; i++)
-        output_file << position[num][i] << '\t';
+        output_file << mPosition[num][i] << '\t';
       float roll, pitch, yaw;
-      orientation[num].to_euler_angles(roll, pitch, yaw);
+      mOrientation[num].to_euler_angles(roll, pitch, yaw);
       output_file << roll << '\t' << pitch << '\t' << yaw << '\t';
     }
     output_file << std::endl;
 
-    velocity_update(t, position, orientation, velocity, angular_velocity);
+    velocity_update(t, mPosition, mOrientation, mVelocity, angular_velocity);
 
     while (t < mFinalTime - 1e-5) {
       float dt = std::min(h0, mFinalTime - t);
 
 #pragma omp parallel for schedule(static)
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
-        position0[num] = position[num] + position_offset[num];
-        orientation0[num] = orientation[num];
+        mPosition0[num] = mPosition[num] + position_offset[num];
+        mOrientation0[num] = mOrientation[num];
       }
 
       float err = 100;
@@ -524,19 +524,21 @@ public:
             case 1:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                position[num] = position0[num] + velocity_k1[num] * (a21 * dt);
-                orientation[num].Cross(
-                    orientation0[num],
+                mPosition[num] =
+                    mPosition0[num] + velocity_k1[num] * (a21 * dt);
+                mOrientation[num].Cross(
+                    mOrientation0[num],
                     Quaternion(angular_velocity_k1[num] * a21, dt));
               }
               break;
             case 2:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                position[num] = position0[num] + velocity_k1[num] * (a31 * dt) +
-                                velocity_k2[num] * (a32 * dt);
-                orientation[num].Cross(
-                    orientation0[num],
+                mPosition[num] = mPosition0[num] +
+                                 velocity_k1[num] * (a31 * dt) +
+                                 velocity_k2[num] * (a32 * dt);
+                mOrientation[num].Cross(
+                    mOrientation0[num],
                     Quaternion((angular_velocity_k1[num] * a31 +
                                 angular_velocity_k2[num] * a32),
                                dt));
@@ -545,11 +547,12 @@ public:
             case 3:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                position[num] = position0[num] + velocity_k1[num] * (a41 * dt) +
-                                velocity_k2[num] * (a42 * dt) +
-                                velocity_k3[num] * (a43 * dt);
-                orientation[num].Cross(
-                    orientation0[num],
+                mPosition[num] = mPosition0[num] +
+                                 velocity_k1[num] * (a41 * dt) +
+                                 velocity_k2[num] * (a42 * dt) +
+                                 velocity_k3[num] * (a43 * dt);
+                mOrientation[num].Cross(
+                    mOrientation0[num],
                     Quaternion((angular_velocity_k1[num] * a41 +
                                 angular_velocity_k2[num] * a42 +
                                 angular_velocity_k3[num] * a43),
@@ -559,12 +562,13 @@ public:
             case 4:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                position[num] = position0[num] + velocity_k1[num] * (a51 * dt) +
-                                velocity_k2[num] * (a52 * dt) +
-                                velocity_k3[num] * (a53 * dt) +
-                                velocity_k4[num] * (a54 * dt);
-                orientation[num].Cross(
-                    orientation0[num],
+                mPosition[num] = mPosition0[num] +
+                                 velocity_k1[num] * (a51 * dt) +
+                                 velocity_k2[num] * (a52 * dt) +
+                                 velocity_k3[num] * (a53 * dt) +
+                                 velocity_k4[num] * (a54 * dt);
+                mOrientation[num].Cross(
+                    mOrientation0[num],
                     Quaternion((angular_velocity_k1[num] * a51 +
                                 angular_velocity_k2[num] * a52 +
                                 angular_velocity_k3[num] * a53 +
@@ -575,13 +579,14 @@ public:
             case 5:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                position[num] = position0[num] + velocity_k1[num] * (a61 * dt) +
-                                velocity_k2[num] * (a62 * dt) +
-                                velocity_k3[num] * (a63 * dt) +
-                                velocity_k4[num] * (a64 * dt) +
-                                velocity_k5[num] * (a65 * dt);
-                orientation[num].Cross(
-                    orientation0[num],
+                mPosition[num] = mPosition0[num] +
+                                 velocity_k1[num] * (a61 * dt) +
+                                 velocity_k2[num] * (a62 * dt) +
+                                 velocity_k3[num] * (a63 * dt) +
+                                 velocity_k4[num] * (a64 * dt) +
+                                 velocity_k5[num] * (a65 * dt);
+                mOrientation[num].Cross(
+                    mOrientation0[num],
                     Quaternion((angular_velocity_k1[num] * a61 +
                                 angular_velocity_k2[num] * a62 +
                                 angular_velocity_k3[num] * a63 +
@@ -593,13 +598,13 @@ public:
             case 6:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                position[num] = position0[num] + velocity_k1[num] * (b1 * dt) +
-                                velocity_k3[num] * (b3 * dt) +
-                                velocity_k4[num] * (b4 * dt) +
-                                velocity_k5[num] * (b5 * dt) +
-                                velocity_k6[num] * (b6 * dt);
-                orientation[num].Cross(
-                    orientation0[num],
+                mPosition[num] =
+                    mPosition0[num] + velocity_k1[num] * (b1 * dt) +
+                    velocity_k3[num] * (b3 * dt) +
+                    velocity_k4[num] * (b4 * dt) +
+                    velocity_k5[num] * (b5 * dt) + velocity_k6[num] * (b6 * dt);
+                mOrientation[num].Cross(
+                    mOrientation0[num],
                     Quaternion((angular_velocity_k1[num] * b1 +
                                 angular_velocity_k3[num] * b3 +
                                 angular_velocity_k4[num] * b4 +
@@ -610,7 +615,7 @@ public:
               break;
           }
 
-          velocity_update(t + c[i] * dt, position, orientation, velocity,
+          velocity_update(t + c[i] * dt, mPosition, mOrientation, mVelocity,
                           angular_velocity);
 
           // update velocity
@@ -618,7 +623,7 @@ public:
             case 1:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                velocity_k2[num] = velocity[num];
+                velocity_k2[num] = mVelocity[num];
                 angular_velocity_k2[num] = dexpinv(
                     angular_velocity_k1[num] * a21 * dt, angular_velocity[num]);
               }
@@ -626,7 +631,7 @@ public:
             case 2:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                velocity_k3[num] = velocity[num];
+                velocity_k3[num] = mVelocity[num];
                 angular_velocity_k3[num] =
                     dexpinv((angular_velocity_k1[num] * a31 +
                              angular_velocity_k2[num] * a32) *
@@ -637,7 +642,7 @@ public:
             case 3:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                velocity_k4[num] = velocity[num];
+                velocity_k4[num] = mVelocity[num];
                 angular_velocity_k4[num] =
                     dexpinv((angular_velocity_k1[num] * a41 +
                              angular_velocity_k2[num] * a42 +
@@ -649,7 +654,7 @@ public:
             case 4:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                velocity_k5[num] = velocity[num];
+                velocity_k5[num] = mVelocity[num];
                 angular_velocity_k5[num] =
                     dexpinv((angular_velocity_k1[num] * a51 +
                              angular_velocity_k2[num] * a52 +
@@ -662,7 +667,7 @@ public:
             case 5:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                velocity_k6[num] = velocity[num];
+                velocity_k6[num] = mVelocity[num];
                 angular_velocity_k6[num] =
                     dexpinv((angular_velocity_k1[num] * a61 +
                              angular_velocity_k2[num] * a62 +
@@ -676,7 +681,7 @@ public:
             case 6:
 #pragma omp parallel for schedule(static)
               for (std::size_t num = 0; num < mNumRigidBody; num++) {
-                velocity_k7[num] = velocity[num];
+                velocity_k7[num] = mVelocity[num];
                 angular_velocity_k7[num] =
                     dexpinv((angular_velocity_k1[num] * b1 +
                              angular_velocity_k3[num] * b3 +
@@ -737,9 +742,9 @@ public:
       output_file << t << '\t';
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
         for (int i = 0; i < 3; i++)
-          output_file << position[num][i] + position_offset[num][i] << '\t';
+          output_file << mPosition[num][i] + position_offset[num][i] << '\t';
         float roll, pitch, yaw;
-        orientation[num].to_euler_angles(roll, pitch, yaw);
+        mOrientation[num].to_euler_angles(roll, pitch, yaw);
         output_file << roll << '\t' << pitch << '\t' << yaw << '\t';
       }
       output_file << std::endl;
@@ -749,9 +754,9 @@ public:
     output_file << t << '\t';
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int i = 0; i < 3; i++)
-        output_file << position[num][i] + position_offset[num][i] << '\t';
+        output_file << mPosition[num][i] + position_offset[num][i] << '\t';
       float roll, pitch, yaw;
-      orientation[num].to_euler_angles(roll, pitch, yaw);
+      mOrientation[num].to_euler_angles(roll, pitch, yaw);
       output_file << roll << '\t' << pitch << '\t' << yaw << '\t';
     }
     output_file << std::endl;
