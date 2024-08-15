@@ -58,16 +58,16 @@ if __name__ == '__main__':
     hignn_model.set_max_far_dot_work_node_size(10000)
     hignn_model.set_max_relative_coord(1000000)
     
-    # time_integrator = hignn.ExplicitEuler()
+    time_integrator = hignn.ExplicitEuler()
     
-    # time_integrator.set_time_step(0.0001)
-    # time_integrator.set_final_time(0.0002)
-    # time_integrator.set_num_rigid_body(NN)
-    # time_integrator.set_output_step(1)
+    time_integrator.set_time_step(0.0001)
+    time_integrator.set_final_time(0.0002)
+    time_integrator.set_num_rigid_body(NN)
+    time_integrator.set_output_step(1)
     
-    # time_integrator.set_velocity_func(velocity_update)
-    # time_integrator.initialize(X)
-    # time_integrator.run()
+    time_integrator.set_velocity_func(velocity_update)
+    time_integrator.initialize(X)
+    time_integrator.run()
     
     rank_range = np.linspace(0, NN, comm.Get_size() + 1, dtype=np.int32)
     
@@ -81,8 +81,6 @@ if __name__ == '__main__':
     
     t1 = time.time()
 
-    # explicit euler time integrator
-    # equivalent to line 69
     for i in range(2):
         with h5py.File('Result/pos'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
             f.create_dataset('pos', data=X[rank_range[rank]:rank_range[rank+1], :])
@@ -102,8 +100,8 @@ if __name__ == '__main__':
         if rank == 0:
             print()            
 
-    # if rank == 0:
-    #     print("Time for simulation: {t:.4f}s".format(t = time.time() - t1))
+    if rank == 0:
+        print("Time for simulation: {t:.4f}s".format(t = time.time() - t1))
    
     # edgeInfo = hignn.BodyEdgeInfo()
     # edgeInfo.setThreeBodyEpsilon(5.0)

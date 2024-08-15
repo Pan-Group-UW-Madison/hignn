@@ -16,8 +16,10 @@
 
 #include <mpi.h>
 
-class ExplicitEuler {
-public:
+// As one pybind11 object is stored in a shared library, it is necessary to
+// control the visibility of the object.
+class __attribute__((visibility("default"))) ExplicitEuler {
+protected:
   float mTimeStep;
   float mFinalTime;
 
@@ -249,8 +251,8 @@ public:
   }
 };
 
-class ExplicitRk4 {
-public:
+class __attribute__((visibility("default"))) ExplicitRk4 {
+protected:
   // constants for integration
   const float a21 = static_cast<float>(1) / static_cast<float>(5);
 
@@ -470,7 +472,7 @@ public:
     }
 
     if ((std::size_t)init_position.shape(0) != mNumRigidBody) {
-      throw std::runtime_error("Inconsistent number of rigid bodys");
+      throw std::runtime_error("Inconsistent number of rigid bodies");
     }
 
     auto data = init_position.unchecked<2>();

@@ -26,7 +26,7 @@ include_directories(
     ${MPI_INCLUDE_PATH}
 )
 
-add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr -fvisibility=hidden)
+add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr)
 
 # link/include
 file(GLOB_RECURSE sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
