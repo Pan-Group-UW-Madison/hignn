@@ -6,15 +6,17 @@ from mpi4py import MPI
 import time
 import h5py
 
+os.system("clear")
+
 def velocity_update(t, position):
     if rank == 0:
         print("t = {t:.4f}".format(t = t))
-    hignn_model.UpdateCoord(position)
-    velocity = np.zeros(position.shape, dtype=np.float32)
+    hignn_model.update_coord(position[:, 0:3])
+    velocity = np.zeros((position.shape[0], 3), dtype=np.float32)
     force = np.zeros((position.shape[0], 3), dtype=np.float32)
     force[:, 2] = -1.0
     
-    hignn_model.Dot(velocity, force)
+    hignn_model.dot(velocity, force)
     
     return velocity
 
@@ -24,20 +26,20 @@ if __name__ == '__main__':
     
     hignn.Init()
     
-    # N = 216
-    # nx = N
-    # ny = N
-    # nz = N
-    # dx = 3
-    # x = np.arange(0, nx * dx, dx)
-    # y = np.arange(0, ny * dx, dx)
-    # z = np.arange(0, nz * dx, dx)
-    # xx, yy, zz = np.meshgrid(x, y, z)
-    # X = np.concatenate(
-    #     (xx.reshape(-1, 1), yy.reshape(-1, 1), zz.reshape(-1, 1)), axis=1)
-    # X = X.astype(np.float32)
+    N = 5
+    nx = N
+    ny = N
+    nz = N
+    dx = 3
+    x = np.arange(0, nx * dx, dx)
+    y = np.arange(0, ny * dx, dx)
+    z = np.arange(0, nz * dx, dx)
+    xx, yy, zz = np.meshgrid(x, y, z)
+    X = np.concatenate(
+        (xx.reshape(-1, 1), yy.reshape(-1, 1), zz.reshape(-1, 1)), axis=1)
+    X = X.astype(np.float32)
     
-    X = np.loadtxt('output0.txt', dtype=np.float32)
+    # X = np.loadtxt('output0.txt', dtype=np.float32)
     # X = np.loadtxt('output23.txt', dtype=np.float32)
     # X = np.loadtxt('Result/pos2.txt', dtype=np.float32)
     
@@ -45,26 +47,27 @@ if __name__ == '__main__':
 
     hignn_model = hignn.HignnModel(X, 50)
     
-    hignn_model.LoadTwoBodyModel('nn/3D_force_UB_max600_try2')
+    hignn_model.load_two_body_model('nn/3D_force_UB_max600_try2')
     
     # set parameters for far dot, the following parameters are default values
-    hignn_model.SetEpsilon(0.1)
-    hignn_model.SetMaxIter(15)
-    hignn_model.SetMatPoolSizeFactor(30)
-    hignn_model.SetPostCheckFlag(False)
-    hignn_model.SetUseSymmetryFlag(True)
-    hignn_model.SetMaxFarDotWorkNodeSize(10000)
-    hignn_model.SetMaxRelativeCoord(1000000)
+    hignn_model.set_epsilon(0.1)
+    hignn_model.set_max_iter(15)
+    hignn_model.set_mat_pool_size_factor(30)
+    hignn_model.set_post_check_flag(False)
+    hignn_model.set_use_symmetry_flag(True)
+    hignn_model.set_max_far_dot_work_node_size(10000)
+    hignn_model.set_max_relative_coord(1000000)
     
-    # time_integrator = hignn.ExplicitEuler()
+    time_integrator = hignn.ExplicitEuler()
     
-    # time_integrator.setTimeStep(0.0001)
-    # time_integrator.setFinalTime(0.0001)
-    # time_integrator.setNumRigidBody(NN)
-    # time_integrator.setOutputStep(1)
-    # time_integrator.initialize(X)
-    # time_integrator.setVelocityFunc(velocity_update)
-    # time_integrator.run()
+    time_integrator.set_time_step(0.0001)
+    time_integrator.set_final_time(0.0002)
+    time_integrator.set_num_rigid_body(NN)
+    time_integrator.set_output_step(1)
+    
+    time_integrator.set_velocity_func(velocity_update)
+    time_integrator.initialize(X)
+    time_integrator.run()
     
     rank_range = np.linspace(0, NN, comm.Get_size() + 1, dtype=np.int32)
     
@@ -77,6 +80,7 @@ if __name__ == '__main__':
     ite = 0
     
     t1 = time.time()
+
     for i in range(2):
         with h5py.File('Result/pos'+str(ite)+'rank'+str(rank)+'.h5', 'w') as f:
             f.create_dataset('pos', data=X[rank_range[rank]:rank_range[rank+1], :])
@@ -98,7 +102,7 @@ if __name__ == '__main__':
 
     if rank == 0:
         print("Time for simulation: {t:.4f}s".format(t = time.time() - t1))
-    
+   
     # edgeInfo = hignn.BodyEdgeInfo()
     # edgeInfo.setThreeBodyEpsilon(5.0)
 

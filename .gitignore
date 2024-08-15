@@ -48,3 +48,6 @@ build/
 *.txt
 *.vtu
 *.vtp
+*.h5
+
+Result/

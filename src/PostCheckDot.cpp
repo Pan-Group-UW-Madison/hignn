@@ -80,7 +80,6 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         workingFlag(i) = 1;
       });
 
-  const int blockSize = mBlockSize;
   int workingFlagSum = workSize;
   while (workSize > 0) {
     totalNumIter++;
@@ -92,7 +91,6 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           const int node = workingNode(rank);
           const int nodeI = mLeafNode(node + leafNodeStart);
           const int nodeJ = mLeafNode(nodeOffset(node));
-          const int relativeOffset = rank * blockSize * blockSize;
 
           const int indexIStart = mClusterTree(nodeI, 2);
           const int indexIEnd = mClusterTree(nodeI, 3);

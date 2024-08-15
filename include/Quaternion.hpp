@@ -78,16 +78,16 @@ public:
     return res;
   }
 
-  const float q0() const {
+  float q0() const {
     return mData[0];
   }
-  const float q1() const {
+  float q1() const {
     return mData[1];
   }
-  const float q2() const {
+  float q2() const {
     return mData[2];
   }
-  const float q3() const {
+  float q3() const {
     return mData[3];
   }
 

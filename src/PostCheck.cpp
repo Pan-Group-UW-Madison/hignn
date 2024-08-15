@@ -46,12 +46,10 @@ void HignnModel::PostCheck() {
   const int matPoolSize = maxRelativeCoord * 40;
   const int maxWorkNodeSize = 5000;
   const int maxIter = 100;
-  const int middleMatPoolSize = maxWorkNodeSize * maxIter;
   int workNodeSize = 0;
   int cMatPoolUsedSize = 0;
   int qMatPoolUsedSize = 0;
   int allowedWorkload = 0;
-  int allowedWorkloadBasedOnMatPool = 0;
 
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       maxRelativeCoord * 3);
