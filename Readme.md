@@ -1,7 +1,30 @@
+# Prerequisites
+[Nvidia driver](https://www.nvidia.com/en-us/drivers/), [docker engine](https://docs.docker.com/engine/install/) and [Nvidia container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+
+# Prepare the docker environment
+One can build the docker image locally
+```shell
+cd script
+docker build --rm -f Dockerfile.hignn -t hignn .
+```
+or pull the image from the docker hub. On Ampere architecture
+```shell
+docker push zishengy/hignn:latest
+```
+On Ada Lovelace architecture
+```shell
+docker pull zishengy/hignn:adalovelace
+```
+
 # Initialize
 
+On Linux
 ```shell
 docker run --privileged -it --rm -v $PWD:/local -w /local --entrypoint /bin/bash --gpus=all --shm-size=4g --hostname hignn hignn
+```
+On Windows
+```shell
+docker run --privileged -it --rm -v ${PWD}:/local -w /local --entrypoint /bin/bash --gpus=all --shm-size=4g --hostname hignn hignn
 ```
 
 # Compile the code
