@@ -33,7 +33,7 @@ PYBIND11_MODULE(hignn, m) {
       .def("set_time_step", &ExplicitEuler::SetTimeStep)
       .def("set_final_time", &ExplicitEuler::SetFinalTime)
       .def("set_num_rigid_body", &ExplicitEuler::SetNumRigidBody)
-      .def("set_velocity_func", &ExplicitEuler::SetPythonVelocityUpdateFunc)
+      .def("set_velocity_func", &ExplicitEuler::SetVelocityUpdateFunc)
       .def("set_x_lim", &ExplicitEuler::SetXLim)
       .def("set_y_lim", &ExplicitEuler::SetYLim)
       .def("set_z_lim", &ExplicitEuler::SetZLim)
@@ -43,14 +43,15 @@ PYBIND11_MODULE(hignn, m) {
 
   py::class_<ExplicitRk4>(m, "ExplicitRk4")
       .def(py::init())
-      .def("set_time_step", &ExplicitRk4::SetInitialTimeStep)
+      .def("set_time_step", &ExplicitRk4::SetTimeStep)
       .def("set_threshold", &ExplicitRk4::SetThreshold)
-      .def("set_finalTime", &ExplicitRk4::SetFinalTime)
+      .def("set_final_time", &ExplicitRk4::SetFinalTime)
       .def("set_num_rigid_body", &ExplicitRk4::SetNumRigidBody)
-      .def("set_velocity_func", &ExplicitRk4::SetPythonVelocityUpdateFunc)
+      .def("set_velocity_func", &ExplicitRk4::SetVelocityUpdateFunc)
       .def("set_x_lim", &ExplicitRk4::SetXLim)
       .def("set_y_lim", &ExplicitRk4::SetYLim)
       .def("set_z_lim", &ExplicitRk4::SetZLim)
+      .def("set_output_step", &ExplicitEuler::SetOutputStep)
       .def("initialize", &ExplicitRk4::Init)
       .def("run", &ExplicitRk4::Run);
 }
