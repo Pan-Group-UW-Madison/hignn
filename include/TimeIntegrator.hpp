@@ -16,6 +16,88 @@
 
 #include <mpi.h>
 
+#include <vtkSmartPointer.h>
+#include <vtkPoints.h>
+#include <vtkPolyData.h>
+#include <vtkVertex.h>
+#include <vtkCellArray.h>
+#include <vtkFloatArray.h>
+#include <vtkPointData.h>
+#include <vtkXMLPolyDataWriter.h>
+
+void Output(std::string filenamePrefix,
+            std::string filename,
+            std::vector<Vec3> &position,
+            std::vector<Vec3> &velocity) {
+  int mpiRank, mpiSize;
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
+  MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
+
+  std::string rankOutputFilename =
+      filename + "_Rank" + std::to_string(mpiRank) + ".vtp";
+  std::string fullRankOutputFilename = filenamePrefix + rankOutputFilename;
+
+  if (mpiRank == 0) {
+    std::ofstream pvdFile(filenamePrefix + filename + ".pvd");
+
+    pvdFile << "<?xml version=\"1.0\"?>\n"
+            << "<VTKFile type=\"Collection\" version=\"0.1\" "
+               "byte_order=\"LittleEndian\">\n"
+            << "  <Collection>\n";
+
+    for (int i = 0; i < mpiSize; ++i)
+      pvdFile << "    <DataSet timestep=\"0\" group=\"\" "
+              << "part=\"" << i << "\" file=\""
+              << filename + "_Rank" + std::to_string(i) + ".vtp\"/>\n";
+
+    pvdFile << "  </Collection>\n"
+            << "</VTKFile>\n";
+
+    pvdFile.close();
+  }
+
+  auto size = position.size();
+  size_t localSize = ceil((float)size / mpiSize);
+  size_t start = mpiRank * localSize;
+  size_t end = std::min(start + localSize, size);
+
+  vtkSmartPointer<vtkPolyData> polyData = vtkSmartPointer<vtkPolyData>::New();
+  vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+  vtkSmartPointer<vtkCellArray> vertices = vtkSmartPointer<vtkCellArray>::New();
+  vtkSmartPointer<vtkFloatArray> velocityArray =
+      vtkSmartPointer<vtkFloatArray>::New();
+
+  velocityArray->SetNumberOfComponents(3);
+  velocityArray->SetName("velocity");
+
+  for (size_t i = start; i < end; i++) {
+    vtkIdType pid[1];
+
+    pid[0] =
+        points->InsertNextPoint(position[i][0], position[i][1], position[i][2]);
+
+    vertices->InsertNextCell(1, pid);
+
+    velocityArray->InsertNextTuple3(velocity[i][0], velocity[i][1],
+                                    velocity[i][2]);
+  }
+
+  polyData->SetPoints(points);
+  polyData->SetVerts(vertices);
+  polyData->GetPointData()->AddArray(velocityArray);
+
+  vtkSmartPointer<vtkXMLPolyDataWriter> writer =
+      vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+  writer->SetFileName(fullRankOutputFilename.c_str());
+  writer->SetInputData(polyData);
+
+  writer->SetCompressorTypeToZLib();
+  writer->SetDataModeToAppended();
+
+  writer->Write();
+  writer->Update();
+}
+
 // As one pybind11 object is stored in a shared library, it is necessary to
 // control the visibility of the object.
 class __attribute__((visibility("default"))) ExplicitEuler {
@@ -24,6 +106,7 @@ protected:
   float mFinalTime;
 
   std::string mOutputFilePrefix;
+  std::string mOutputFilename;
 
   int mFuncCount;
   int mOutputStep;
@@ -93,7 +176,8 @@ public:
   ExplicitEuler()
       : mTimeStep(1.0),
         mFinalTime(10.0),
-        mOutputFilePrefix("Result/output"),
+        mOutputFilePrefix("Result/"),
+        mOutputFilename("output"),
         mOutputStep(1) {
     mDomainLimit[0][0] = -1;
     mDomainLimit[1][0] = 1;
@@ -183,28 +267,19 @@ public:
 
   void Run() {
     mFuncCount = 0;
-    float t = 0;
-    float h0 = mTimeStep;
+    double t = 0;
+    double h0 = mTimeStep;
 
     int mpiRank;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
 
-    if (mpiRank == 0) {
-      std::ofstream output_file(mOutputFilePrefix + "_" +
-                                std::to_string(mFuncCount) + ".txt");
-      std::stringstream outputStream;
-      for (std::size_t num = 0; num < mNumRigidBody; num++) {
-        for (int i = 0; i < 3; i++)
-          outputStream << mPosition[num][i] << '\t';
-      }
-      outputStream << std::endl;
-      output_file << outputStream.str();
-      output_file.close();
-    }
-
     while (t < mFinalTime - 1e-5) {
-      mFuncCount++;
-      float dt = std::min(h0, mFinalTime - t);
+      if (mpiRank == 0) {
+        std::cout << "--------------------------------" << std::endl;
+        printf("Time: %.6f, dt: %.6f\n", t, h0);
+      }
+
+      double dt = std::min(h0, mFinalTime - t);
 
       velocity_update(t + dt, mPosition, mOrientation, mVelocity,
                       mAngularVelocity);
@@ -230,23 +305,15 @@ public:
       t += dt;
 
       if (mFuncCount % mOutputStep == 0) {
-        if (mpiRank == 0) {
-          std::ofstream output_file(mOutputFilePrefix + "_" +
-                                    std::to_string(mFuncCount) + ".txt");
-          std::stringstream outputStream;
-          for (std::size_t num = 0; num < mNumRigidBody; num++) {
-            for (int i = 0; i < 3; i++)
-              outputStream << mPosition[num][i] << '\t';
-          }
-          outputStream << std::endl;
-          output_file << outputStream.str();
-          output_file.close();
-        }
+        Output(mOutputFilePrefix, mOutputFilename + std::to_string(mFuncCount),
+               mPosition, mVelocity);
       }
 
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
         mPosition[num] = mPosition[num] + mPositionOffset[num];
       }
+
+      mFuncCount++;
     }
   }
 };
@@ -301,6 +368,7 @@ protected:
   float mFinalTime;
 
   std::string mOutputFilePrefix;
+  std::string mOutputFilename;
 
   int mFuncCount;
 
@@ -390,7 +458,8 @@ public:
       : mTimeStep(1.0),
         threshold(1e-3),
         mFinalTime(10.0),
-        mOutputFilePrefix("result/output") {
+        mOutputFilePrefix("Result/"),
+        mOutputFilename("output") {
     domain_limit[0][0] = -1;
     domain_limit[1][0] = 1;
     domain_limit[0][1] = -1;
