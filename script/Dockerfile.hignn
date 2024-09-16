@@ -42,14 +42,14 @@ RUN cd /opt/ && \
     rm -rf kokkos-source
 
 # PyTorch and LibTorch with CUDA 11.8 as PyTorch Geometric requires CUDA 11.8
-RUN pip install torch==2.2.1 torchvision==0.17.0 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu118
+RUN pip3 install --no-cache-dir torch==2.2.1 torchvision==0.17.0 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu118
 RUN wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.2.1%2Bcu118.zip && \
     unzip libtorch-cxx11-abi-shared-with-deps-2.2.1+cu118.zip && \
     mv libtorch /opt/libtorch && \
     rm -rf libtorch-cxx11-abi-shared-with-deps-2.2.1+cu118.zip libtorch
 
 # PyTorch Geometric
-RUN pip3 install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.1+cu118.html
+RUN pip3 install --no-cache-dir torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.1+cu118.html
 
 # environment variables
 ENV PATH="${PATH}:/opt/openmpi/bin"
@@ -62,7 +62,7 @@ ENV OMP_PROC_BIND=spread
 ENV OMP_PLACES=sockets
 ENV OMP_NUM_THREADS=10
 
-RUN pip3 install mpi4py h5py
+RUN pip3 install --no-cache-dir mpi4py h5py
 RUN service ssh start
 
 # setup ssh
@@ -134,3 +134,6 @@ RUN cd /opt/ && \
     rm -rf /opt/vtk
 
 ENV VTK_DIR=/opt/vtk-build/lib/cmake/vtk-9.1
+
+# clean up
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
