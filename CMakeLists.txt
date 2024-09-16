@@ -10,6 +10,9 @@ find_package(Kokkos REQUIRED)
 find_package(TBB REQUIRED)
 find_package(MPI REQUIRED)
 
+find_package(VTK REQUIRED)
+include_directories(SYSTEM ${VTK_INCLUDE_DIRS})
+
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/extern/eigen/)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem ${PROJECT_SOURCE_DIR}/extern/eigen/")
 
@@ -39,9 +42,9 @@ add_library(hignn SHARED ${sources} interface/HignnInterface.cpp)
 set_target_properties(hignn PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
 target_include_directories(hignn SYSTEM PUBLIC ${PYTHON_INCLUDE_DIRS})
+target_link_libraries(hignn "${VTK_LIBRARIES}")
 target_link_libraries(hignn Kokkos::kokkos)
 target_link_libraries(hignn "${TORCH_LIBRARIES}")
 target_link_libraries(hignn "${MPI_CXX_LIBRARIES}")
-# target_link_libraries(hignn Python::Python)
 target_link_libraries(hignn pybind11::pybind11)
 target_link_libraries(hignn TBB::tbb)
