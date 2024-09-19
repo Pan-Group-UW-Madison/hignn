@@ -850,7 +850,7 @@ public:
       elems[i] = value;
   }
   // assign (compatible with std::vector's one) (by JLBC for MRPT)
-  void assign(const size_t n, const T &value) {
+  void assign([[maybe_unused]] const size_t n, const T &value) {
     assert(N == n);
     for (size_t i = 0; i < N; i++)
       elems[i] = value;

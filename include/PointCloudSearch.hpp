@@ -14,15 +14,6 @@ typedef Kokkos::DefaultHostExecutionSpace host_execution_space;
 typedef typename Kokkos::TeamPolicy<host_execution_space> host_team_policy;
 typedef typename host_team_policy::member_type host_member_type;
 
-// class sort_indices
-//{
-//   private:
-//     double* mparr;
-//   public:
-//     sort_indices(double* parr) : mparr(parr) {}
-//     bool operator()(int i, int j) const { return mparr[i]<mparr[j]; }
-//};
-
 //! Custom RadiusResultSet for nanoflann that uses pre-allocated space for
 //! indices and radii instead of using std::vec for std::pairs
 template <typename _DistanceType, typename _IndexType = size_t>
@@ -222,7 +213,7 @@ public:
 
   //! Bounding box query method required by Nanoflann.
   template <class BBOX>
-  bool kdtree_get_bbox(BBOX &bb) const {
+  bool kdtree_get_bbox([[maybe_unused]] BBOX &bb) const {
     return false;
   }
 
@@ -239,7 +230,7 @@ public:
   //! Returns the distance between a point and a source site, given its index
   inline double kdtree_distance(const double *queryPt,
                                 const int idx,
-                                long long sz) const {
+                                [[maybe_unused]] long long sz) const {
     double distance = 0;
     for (int i = 0; i < _dim; ++i) {
       distance += (_src_pts_view(idx, i) - queryPt[i]) *
@@ -286,7 +277,7 @@ public:
       neighbor_lists_view_type neighbor_lists,
       epsilons_view_type epsilons,
       const double uniform_radius = 0.0,
-      double max_search_radius = 0.0) {
+      [[maybe_unused]] double max_search_radius = 0.0) {
     // function does not populate epsilons, they must be prepopulated
 
     assert(
@@ -357,8 +348,7 @@ public:
         host_team_policy(num_target_sites, Kokkos::AUTO)
             .set_scratch_size(0 /*shared memory level*/,
                               Kokkos::PerTeam(team_scratch_size)),
-        KOKKOS_LAMBDA(const host_member_type &teamMember,
-                      size_t &t_max_num_neighbors) {
+        [&](const host_member_type &teamMember, size_t &t_max_num_neighbors) {
           // make unmanaged scratch views
           scratch_double_view neighbor_distances(
               teamMember.team_scratch(0 /*shared memory*/),
@@ -573,7 +563,7 @@ public:
         host_team_policy(num_target_sites, Kokkos::AUTO)
             .set_scratch_size(0 /*shared memory level*/,
                               Kokkos::PerTeam(team_scratch_size)),
-        KOKKOS_LAMBDA(const host_member_type &teamMember) {
+        [&](const host_member_type &teamMember) {
           // make unmanaged scratch views
           scratch_double_view neighbor_distances(
               teamMember.team_scratch(0 /*shared memory*/),
@@ -769,8 +759,7 @@ public:
         host_team_policy(num_target_sites, Kokkos::AUTO)
             .set_scratch_size(0 /*shared memory level*/,
                               Kokkos::PerTeam(team_scratch_size)),
-        KOKKOS_LAMBDA(const host_member_type &teamMember,
-                      size_t &t_min_num_neighbors) {
+        [&](const host_member_type &teamMember, size_t &t_min_num_neighbors) {
           // make unmanaged scratch views
           scratch_double_view neighbor_distances(
               teamMember.team_scratch(0 /*shared memory*/),
@@ -981,8 +970,7 @@ public:
         host_team_policy(num_target_sites, Kokkos::AUTO)
             .set_scratch_size(0 /*shared memory level*/,
                               Kokkos::PerTeam(team_scratch_size)),
-        KOKKOS_LAMBDA(const host_member_type &teamMember,
-                      size_t &t_min_num_neighbors) {
+        [&](const host_member_type &teamMember, size_t &t_min_num_neighbors) {
           // make unmanaged scratch views
           scratch_double_view neighbor_distances(
               teamMember.team_scratch(0 /*shared memory*/),

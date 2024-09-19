@@ -54,6 +54,8 @@ protected:
   std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
       mVelocityUpdateFunc;
 
+  bool mIsPeriodicBoundary;
+
   void VelocityUpdate(
       const float t,
       const std::vector<Vec3> &position,
@@ -173,6 +175,7 @@ public:
         mNumRigidBody(0),
         mTimeStep(1.0),
         mFinalTime(10.0),
+        mIsPeriodicBoundary(false),
         mOutputFilePrefix("Result/"),
         mOutputFilename("output") {
     MPI_Comm_rank(MPI_COMM_WORLD, &mMpiRank);
@@ -218,16 +221,22 @@ public:
   void SetXLim(pybind11::list xLim) {
     mDomainLimit[0][0] = pybind11::cast<float>(xLim[0]);
     mDomainLimit[1][0] = pybind11::cast<float>(xLim[1]);
+
+    mIsPeriodicBoundary = true;
   }
 
   void SetYLim(pybind11::list yLim) {
     mDomainLimit[0][1] = pybind11::cast<float>(yLim[0]);
     mDomainLimit[1][1] = pybind11::cast<float>(yLim[1]);
+
+    mIsPeriodicBoundary = true;
   }
 
   void SetZLim(pybind11::list zLim) {
     mDomainLimit[0][2] = pybind11::cast<float>(zLim[0]);
     mDomainLimit[1][2] = pybind11::cast<float>(zLim[1]);
+
+    mIsPeriodicBoundary = true;
   }
 
   void SetOutputStep(const int outputStep) {
@@ -298,14 +307,16 @@ public:
         mOrientation[num].Cross(mOrientation[num],
                                 Quaternion(mAngularVelocity[num], dt));
 
-        for (int j = 0; j < 3; j++) {
-          // periodic boundary condition
-          if (mPosition[num][j] > mDomainLimit[1][j]) {
-            mPositionOffset[num][j] = mDomainLimit[0][j] - mDomainLimit[1][j];
-          } else if (mPosition[num][j] < mDomainLimit[0][j]) {
-            mPositionOffset[num][j] = mDomainLimit[1][j] - mDomainLimit[0][j];
-          } else {
-            mPositionOffset[num][j] = 0.0;
+        if (mIsPeriodicBoundary) {
+          for (int j = 0; j < 3; j++) {
+            // periodic boundary condition
+            if (mPosition[num][j] > mDomainLimit[1][j]) {
+              mPositionOffset[num][j] = mDomainLimit[0][j] - mDomainLimit[1][j];
+            } else if (mPosition[num][j] < mDomainLimit[0][j]) {
+              mPositionOffset[num][j] = mDomainLimit[1][j] - mDomainLimit[0][j];
+            } else {
+              mPositionOffset[num][j] = 0.0;
+            }
           }
         }
       }

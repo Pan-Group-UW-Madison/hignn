@@ -1,5 +1,6 @@
 #include "HignnModel.hpp"
 #include "TimeIntegrator.hpp"
+#include "PotentialForce.hpp"
 
 template <typename... Args>
 using overload_cast_ = pybind11::detail::overload_cast_impl<Args...>;
@@ -54,4 +55,11 @@ PYBIND11_MODULE(hignn, m) {
       .def("set_output_step", &ExplicitEuler::SetOutputStep)
       .def("initialize", &ExplicitRk4::Init)
       .def("run", &ExplicitRk4::Run);
+
+  py::class_<PotentialForce>(m, "PotentialForce")
+      .def(py::init())
+      .def("set_periodic", &PotentialForce::SetPeriodic)
+      .def("set_domain", &PotentialForce::SetDomain)
+      .def("set_two_body_epsilon", &PotentialForce::SetTwoBodyEpsilon)
+      .def("get_potential_force", &PotentialForce::GetPotentialForce);
 }
