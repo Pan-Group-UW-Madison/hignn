@@ -18,6 +18,11 @@ docker pull zishengy/hignn:adalovelace
 
 # Initialize
 
+Init the submodules
+```shell
+git submodule update --init --recursive
+```
+
 Rename the image with
 ```shell
 docker image tag zishengy/hignn:latest hignn
