@@ -36,7 +36,6 @@ CMakeCache.txt
 data/
 
 *.pt
-*.pkl
 *.ts
 
 build/
