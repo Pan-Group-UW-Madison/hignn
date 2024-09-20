@@ -33,7 +33,6 @@ protected:
   double mFinalTime;
 
   std::string mOutputFilePrefix;
-  std::string mOutputFilename;
 
   int mFuncCount;
   int mOutputStep;
@@ -101,13 +100,13 @@ protected:
     }
   }
 
-  void Output() {
+  void Output(const std::string &outputFilename) {
     std::string rankOutputFilename =
-        mOutputFilename + "_Rank" + std::to_string(mMpiRank) + ".vtp";
+        outputFilename + "_Rank" + std::to_string(mMpiRank) + ".vtp";
     std::string fullRankOutputFilename = mOutputFilePrefix + rankOutputFilename;
 
     if (mMpiRank == 0) {
-      std::ofstream pvdFile(mOutputFilePrefix + mOutputFilename + ".pvd");
+      std::ofstream pvdFile(mOutputFilePrefix + outputFilename + ".pvd");
 
       pvdFile << "<?xml version=\"1.0\"?>\n"
               << "<VTKFile type=\"Collection\" version=\"0.1\" "
@@ -117,7 +116,7 @@ protected:
       for (int i = 0; i < mMpiSize; ++i)
         pvdFile << "    <DataSet timestep=\"0\" group=\"\" "
                 << "part=\"" << i << "\" file=\""
-                << mOutputFilename + "_Rank" + std::to_string(i) + ".vtp\"/>\n";
+                << outputFilename + "_Rank" + std::to_string(i) + ".vtp\"/>\n";
 
       pvdFile << "  </Collection>\n"
               << "</VTKFile>\n";
@@ -176,8 +175,7 @@ public:
         mTimeStep(1.0),
         mFinalTime(10.0),
         mIsPeriodicBoundary(false),
-        mOutputFilePrefix("Result/"),
-        mOutputFilename("output") {
+        mOutputFilePrefix("Result/") {
     MPI_Comm_rank(MPI_COMM_WORLD, &mMpiRank);
     MPI_Comm_size(MPI_COMM_WORLD, &mMpiSize);
 
@@ -324,7 +322,7 @@ public:
       t += dt;
 
       if (mFuncCount % mOutputStep == 0) {
-        Output();
+        Output("output" + std::to_string(mFuncCount));
       }
 
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
@@ -665,7 +663,7 @@ public:
       dt = std::min(dt, h0);
 
       if (mFuncCount % mOutputStep == 0) {
-        Output();
+        Output("output" + std::to_string(mFuncCount));
       }
 
       // reset k1 for next step
