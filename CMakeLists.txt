@@ -29,7 +29,12 @@ include_directories(
     ${MPI_INCLUDE_PATH}
 )
 
-add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr)
+if (USE_GPU)
+    add_compile_definitions(USE_GPU)
+    add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG --expt-relaxed-constexpr)
+else()
+    add_compile_options(-O3 -Werror -Wall -Wextra -DNDEBUG)
+endif()
 
 # link/include
 file(GLOB_RECURSE sources ${PROJECT_SOURCE_DIR}/src/*.cpp)

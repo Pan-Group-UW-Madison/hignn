@@ -322,10 +322,17 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       // do inference for CMat
+#if USE_GPU
       auto options = torch::TensorOptions()
                          .dtype(torch::kFloat32)
                          .device(torch::kCUDA, mCudaDevice)
                          .requires_grad(false);
+#else
+      auto options = torch::TensorOptions()
+                         .dtype(torch::kFloat32)
+                         .device(torch::kCPU)
+                         .requires_grad(false);
+#endif
       torch::Tensor relativeCoordTensor =
           torch::from_blob(relativeCoordPool.data(), {totalCoord, 3}, options);
       std::vector<c10::IValue> inputs;
@@ -432,8 +439,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             const int rank = teamMember.league_rank();
 
             const int nodeI = mFarMatI(workingNode(rank));
-            const int indexIStart = mClusterTree(nodeI, 2);
-            const int indexIEnd = mClusterTree(nodeI, 3);
 
             const int rowSize = mClusterTree(nodeI, 3) - mClusterTree(nodeI, 2);
 
@@ -611,10 +616,17 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
       Kokkos::fence();
 
       // do inference for QMat
+#if USE_GPU
       auto options = torch::TensorOptions()
                          .dtype(torch::kFloat32)
                          .device(torch::kCUDA, mCudaDevice)
                          .requires_grad(false);
+#else
+      auto options = torch::TensorOptions()
+                         .dtype(torch::kFloat32)
+                         .device(torch::kCPU)
+                         .requires_grad(false);
+#endif
       torch::Tensor relativeCoordTensor =
           torch::from_blob(relativeCoordPool.data(), {totalCoord, 3}, options);
       std::vector<c10::IValue> inputs;
@@ -720,7 +732,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                   Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
             const int rank = teamMember.league_rank();
 
-            const int nodeI = mFarMatI(workingNode(rank));
             const int nodeJ = mFarMatJ(workingNode(rank));
             const int indexJStart = mClusterTree(nodeJ, 2);
             const int indexJEnd = mClusterTree(nodeJ, 3);
@@ -1217,7 +1228,6 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 const Kokkos::TeamPolicy<
                     Kokkos::DefaultExecutionSpace>::member_type &teamMember) {
               const int rank = teamMember.league_rank();
-              const int workingNodeRank = dotProductRank(rank);
 
               const int nodeI = mFarMatI(dotProductNode(rank));
               const int indexIStart = mClusterTree(nodeI, 2);

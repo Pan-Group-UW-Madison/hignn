@@ -63,7 +63,9 @@ protected:
 
   int mMPIRank;
   int mMPISize;
+#if USE_GPU
   int mCudaDevice;
+#endif
 
   double mEpsilon;
 
@@ -80,7 +82,9 @@ protected:
   std::size_t mClusterTreeSize;
   torch::jit::script::Module mTwoBodyModel;
 
+#if USE_GPU
   std::string mDeviceString;
+#endif
 
   bool mPostCheckFlag;
 

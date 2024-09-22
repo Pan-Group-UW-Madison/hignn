@@ -20,7 +20,6 @@ void HignnModel::CloseFarCheck() {
     mAux(i, 0) = -std::numeric_limits<float>::max();
 
   int initialLevel = floor(log(mMPISize) / log(2));
-  int initialNodeSize = pow(2, initialLevel + 1) - 1;
   int maxWorkSize = pow(2, initialLevel);
 
   // go over all nodes, calculate aux based on the tree structure.

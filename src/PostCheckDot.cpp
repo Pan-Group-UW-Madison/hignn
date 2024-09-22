@@ -155,10 +155,17 @@ void HignnModel::PostCheckDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     Kokkos::fence();
 
     // do inference
+#if USE_GPU
     auto options = torch::TensorOptions()
                        .dtype(torch::kFloat32)
                        .device(torch::kCUDA, mCudaDevice)
                        .requires_grad(false);
+#else
+    auto options = torch::TensorOptions()
+                       .dtype(torch::kFloat32)
+                       .device(torch::kCPU)
+                       .requires_grad(false);
+#endif
     torch::Tensor relativeCoordTensor =
         torch::from_blob(relativeCoordPool.data(), {totalCoord, 3}, options);
     std::vector<c10::IValue> inputs;

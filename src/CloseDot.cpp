@@ -1,4 +1,8 @@
+#include <algorithm>
+
 #include "HignnModel.hpp"
+
+using namespace std;
 
 void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
@@ -16,6 +20,8 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
+
+  std::cout << "Using GPU" << USE_GPU << std::endl;
 
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       mMaxRelativeCoord * 3);
@@ -155,10 +161,17 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
     Kokkos::fence();
 
     // do inference
+#if USE_GPU
     auto options = torch::TensorOptions()
                        .dtype(torch::kFloat32)
                        .device(torch::kCUDA, mCudaDevice)
                        .requires_grad(false);
+#else
+    auto options = torch::TensorOptions()
+                       .dtype(torch::kFloat32)
+                       .device(torch::kCPU)
+                       .requires_grad(false);
+#endif
     torch::Tensor relativeCoordTensor =
         torch::from_blob(relativeCoordPool.data(), {totalCoord, 3}, options);
     std::vector<c10::IValue> inputs;

@@ -16,6 +16,7 @@ void Init() {
   int mpiRank;
   MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
 
+#ifdef USE_GPU
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
 
@@ -23,10 +24,17 @@ void Init() {
                       .set_num_threads(10)
                       .set_device_id(mpiRank % deviceCount)
                       .set_disable_warnings(false);
+#else
+  auto settings =
+      Kokkos::InitializationSettings().set_num_threads(10).set_disable_warnings(
+          false);
+#endif
 
   Kokkos::initialize(settings);
 
+#ifdef USE_GPU
   Kokkos::Impl::CudaInternal::m_cudaDev = mpiRank % deviceCount;
+#endif
 }
 
 void Finalize() {
@@ -247,22 +255,36 @@ HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
   mMaxIter = 100;
   mMatPoolSizeFactor = 40;
 
+#if USE_GPU
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
   mCudaDevice = mMPIRank % deviceCount;
+#endif
 }
 
 void HignnModel::LoadTwoBodyModel(const std::string &modelPath) {
   // load script model
+#if USE_GPU
   mTwoBodyModel =
       torch::jit::load(modelPath + "_" + std::to_string(mCudaDevice) + ".pt");
   mDeviceString = "cuda:" + std::to_string(mCudaDevice);
   mTwoBodyModel.to(mDeviceString);
+#else
+  mTwoBodyModel = torch::jit::load(modelPath + ".pt");
+  mTwoBodyModel.to(torch::kCPU);
+#endif
 
+#if USE_GPU
   auto options = torch::TensorOptions()
                      .dtype(torch::kFloat32)
                      .device(torch::kCUDA, mCudaDevice)
                      .requires_grad(false);
+#else
+  auto options = torch::TensorOptions()
+                     .dtype(torch::kFloat32)
+                     .device(torch::kCPU)
+                     .requires_grad(false);
+#endif
   torch::Tensor testTensor = torch::ones({50000, 3}, options);
   std::vector<c10::IValue> inputs;
   inputs.push_back(testTensor);

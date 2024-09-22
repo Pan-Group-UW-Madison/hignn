@@ -40,7 +40,7 @@ private:
   std::shared_ptr<PointCloudSearch<HostFloatMatrix>> mPointCloudSearch;
 
 public:
-  PotentialForce() : mIsPeriodicBoundary(false), mDim(3), mTwoBodyEpsilon(0.0) {
+  PotentialForce() : mIsPeriodicBoundary(false), mTwoBodyEpsilon(0.0), mDim(3) {
   }
 
   ~PotentialForce() {

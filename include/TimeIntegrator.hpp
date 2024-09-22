@@ -29,14 +29,16 @@ class __attribute__((visibility("default"))) TimeIntegrator {
 protected:
   int mMpiRank, mMpiSize;
 
-  double mTimeStep;
-  double mFinalTime;
-
-  std::string mOutputFilePrefix;
-
   int mFuncCount;
   int mOutputStep;
   std::size_t mNumRigidBody;
+
+  double mTimeStep;
+  double mFinalTime;
+
+  bool mIsPeriodicBoundary;
+
+  std::string mOutputFilePrefix;
 
   std::vector<Vec3> mPosition0;
   std::vector<Quaternion> mOrientation0;
@@ -52,8 +54,6 @@ protected:
 
   std::function<pybind11::array_t<float>(float, pybind11::array_t<float>)>
       mVelocityUpdateFunc;
-
-  bool mIsPeriodicBoundary;
 
   void VelocityUpdate(
       const float t,

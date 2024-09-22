@@ -1,9 +1,20 @@
 import torch
 import os
 import argparse
+import subprocess
 
 if __name__ == '__main__':
     source_path = os.getcwd()
+    
+    os.system('clear')
+    
+    is_gpu_available = False
+        
+    try:
+        subprocess.check_output('nvidia-smi')
+        is_gpu_available = True
+    except Exception as e:
+        pass
     
     parser = argparse.ArgumentParser(description='build')
     
@@ -15,8 +26,6 @@ if __name__ == '__main__':
     # prepare for multi-gpu
     device_count = torch.cuda.device_count()
     
-    os.system('clear')
-    
     model_name = args.model
     
     is_model_existing = os.path.exists('nn/'+model_name+'.pkl')
@@ -25,20 +34,30 @@ if __name__ == '__main__':
         exit()    
     
     need_convert = False
-    for i in range(device_count):
-        if not os.path.exists(source_path + '/nn/'+model_name+'_'+str(i)+'.pt'):
+    if is_gpu_available:
+        for i in range(device_count):
+            if not os.path.exists(source_path + '/nn/'+model_name+'_'+str(i)+'.pt'):
+                need_convert = True
+                break
+    else:
+        if not os.path.exists(source_path + '/nn/'+model_name+'.pt'):
             need_convert = True
-            break
     
     if need_convert:
-        os.system('python3 ' + './python/convert.py --gpus '+str(device_count)+' --model '+model_name)
+        if is_gpu_available:
+            os.system('python3 ' + './python/convert.py --gpus '+str(device_count)+' --model '+model_name)
+        else:
+            os.system('python3 ' + './python/convert.py --gpus 0 --model '+model_name)
     
     # build hignn library
     os.chdir(source_path + '/build')
     if args.rebuild:
         os.system('rm -rf *')
         
-        os.system('export CXX=$Kokkos_PATH/bin/nvcc_wrapper && cmake -D CMAKE_PREFIX_PATH="$LibTorch_PATH/share/cmake/;$Kokkos_PATH" -D CMAKE_CXX_EXTENSIONS=Off ../')
+        if is_gpu_available:
+            os.system('export CXX=$Kokkos_PATH/bin/nvcc_wrapper && cmake -D CMAKE_PREFIX_PATH="$LibTorch_PATH/share/cmake/;$Kokkos_PATH" -D CMAKE_CXX_EXTENSIONS=Off -D USE_GPU:BOOL=On ../')
+        else:
+            os.system('cmake -D CMAKE_PREFIX_PATH="$LibTorch_PATH/share/cmake/" -D CMAKE_CXX_EXTENSIONS=Off -D USE_GPU:BOOL=Off ../')
         
     os.system('make -j 16')
     
