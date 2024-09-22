@@ -1,4 +1,9 @@
 #!/bin/sh
+
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+dpkg -i cuda-keyring_1.1-1_all.deb
+apt-get update
+
 apt-get install -y --no-install-recommends \
     build-essential \
     clang \
@@ -19,6 +24,7 @@ apt-get install -y --no-install-recommends \
     wget \
     libtbb-dev \
     libnuma-dev \
+    cuda-toolkit-11-8 \
     libegl1-mesa-dev \
     && update-alternatives \
         --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
