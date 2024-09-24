@@ -49,9 +49,16 @@ if __name__ == '__main__':
         else:
             os.system('python3 ' + './python/convert.py --gpus 0 --model '+model_name)
     
-    # build hignn library
-    os.chdir(source_path + '/build')
+    # build hignn library        
     if args.rebuild:
+        os.system("git config --global --add safe.directory \"*\"")
+        os.system("git submodule update --init --recursive")
+        
+        try:
+            os.chdir(source_path + '/build')
+        except:
+            os.mkdir(source_path + '/build')
+            os.chdir(source_path + '/build')
         os.system('rm -rf *')
         
         if is_gpu_available:
@@ -63,8 +70,12 @@ if __name__ == '__main__':
     
     os.system('cp *.so ../python/hignn.so')
     
-    # # init running environment
-    # os.chdir(source_path)
+    # init running environment
+    os.chdir(source_path)
+    try:
+        os.chdir('Result')
+    except:
+        os.mkdir('Result')
     # is_results_existing = os.path.exists('results')
     # if not is_results_existing:
     #     os.mkdir('results')

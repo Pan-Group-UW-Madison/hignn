@@ -21,12 +21,6 @@ docker pull zishengy/hignn:cpu
 ```
 
 # Initialize
-
-Init the submodules
-```shell
-git submodule update --init --recursive
-```
-
 Rename the image with
 ```shell
 docker image tag zishengy/hignn:{ARCH} hignn
