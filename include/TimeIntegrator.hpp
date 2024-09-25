@@ -60,7 +60,7 @@ protected:
       const std::vector<Vec3> &position,
       [[maybe_unused]] const std::vector<Quaternion> &orientation,
       std::vector<Vec3> &velocity,
-      std::vector<Vec3> &angularVelocity) {
+      [[maybe_unused]] std::vector<Vec3> &angularVelocity) {
     // convert
     pybind11::array_t<float> input;
     input.resize({(int)mNumRigidBody, 6});
@@ -70,15 +70,18 @@ protected:
 #pragma omp parallel for schedule(static)
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
-        // periodic boundary condition
-        if (position[num][j] > mDomainLimit[1][j]) {
-          mPositionOffset[num][j] = mDomainLimit[0][j] - mDomainLimit[1][j];
-        } else if (position[num][j] < mDomainLimit[0][j]) {
-          mPositionOffset[num][j] = mDomainLimit[1][j] - mDomainLimit[0][j];
-        } else {
-          mPositionOffset[num][j] = 0.0;
-        }
-        inputData(num, j) = position[num][j] + mPositionOffset[num][j];
+        if (mIsPeriodicBoundary) {
+          // periodic boundary condition
+          if (position[num][j] > mDomainLimit[1][j]) {
+            mPositionOffset[num][j] = mDomainLimit[0][j] - mDomainLimit[1][j];
+          } else if (position[num][j] < mDomainLimit[0][j]) {
+            mPositionOffset[num][j] = mDomainLimit[1][j] - mDomainLimit[0][j];
+          } else {
+            mPositionOffset[num][j] = 0.0;
+          }
+          inputData(num, j) = position[num][j] + mPositionOffset[num][j];
+        } else
+          inputData(num, j) = position[num][j];
       }
       float row, pitch, yaw;
       mOrientation[num].to_euler_angles(row, pitch, yaw);
@@ -95,7 +98,7 @@ protected:
     for (std::size_t num = 0; num < mNumRigidBody; num++) {
       for (int j = 0; j < 3; j++) {
         velocity[num][j] = result_data(num, j);
-        angularVelocity[num][j] = result_data(num, j + 3);
+        // angularVelocity[num][j] = result_data(num, j + 3);
       }
     }
   }
@@ -325,9 +328,10 @@ public:
         Output("output" + std::to_string(mFuncCount));
       }
 
-      for (std::size_t num = 0; num < mNumRigidBody; num++) {
-        mPosition[num] = mPosition[num] + mPositionOffset[num];
-      }
+      if (mIsPeriodicBoundary)
+        for (std::size_t num = 0; num < mNumRigidBody; num++) {
+          mPosition[num] = mPosition[num] + mPositionOffset[num];
+        }
 
       mFuncCount++;
     }
@@ -443,7 +447,8 @@ public:
 
 #pragma omp parallel for schedule(static)
       for (std::size_t num = 0; num < mNumRigidBody; num++) {
-        mPosition0[num] = mPosition[num] + mPositionOffset[num];
+        if (mIsPeriodicBoundary)
+          mPosition0[num] = mPosition[num] + mPositionOffset[num];
         mOrientation0[num] = mOrientation[num];
       }
 

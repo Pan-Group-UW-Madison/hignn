@@ -21,8 +21,6 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   std::size_t totalNumQuery = 0;
   std::size_t totalNumIter = 0;
 
-  std::cout << "Using GPU" << USE_GPU << std::endl;
-
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       mMaxRelativeCoord * 3);
   DeviceFloatMatrix queryResultPool("queryResultPool", mMaxRelativeCoord, 3);

@@ -39,7 +39,9 @@ if __name__ == '__main__':
     file_name = "./nn/"+model_name+".pkl"
 
     if gpus == 0:
-        model = torch.load(file_name, map_location=torch.device('cpu'))
+        nn_2body = torch.load(file_name, map_location=torch.device('cpu'))
+        model = Net(nn_2body)
+        
         sm = torch.jit.script(model)
         target_file_name = "./nn/"+model_name+".pt"
         torch.jit.save(sm, target_file_name)

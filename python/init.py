@@ -65,6 +65,8 @@ if __name__ == '__main__':
             os.system('export CXX=$Kokkos_PATH/bin/nvcc_wrapper && cmake -D CMAKE_PREFIX_PATH="$LibTorch_PATH/share/cmake/;$Kokkos_PATH" -D CMAKE_CXX_EXTENSIONS=Off -D USE_GPU:BOOL=On ../')
         else:
             os.system('cmake -D CMAKE_PREFIX_PATH="$LibTorch_PATH/share/cmake/" -D CMAKE_CXX_EXTENSIONS=Off -D USE_GPU:BOOL=Off ../')
+            
+    os.chdir(source_path + '/build')
         
     os.system('make -j 16')
     

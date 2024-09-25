@@ -959,7 +959,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         Kokkos::parallel_reduce(
             Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workNodeSize),
             KOKKOS_LAMBDA(const int i, int &tIterationCheckResult) {
-              if (workingNodeIteration(i) >= 15)
+              if (workingNodeIteration(i) > maxIter)
                 tIterationCheckResult++;
             },
             Kokkos::Sum<int>(iterationCheckResult));
@@ -996,7 +996,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           Kokkos::deep_copy(muHost, mu2);
 
           for (int i = 0; i < workNodeSize; i++) {
-            if (workingNodeIterationHost(i) >= 15) {
+            if (workingNodeIterationHost(i) > maxIter) {
               std::cout << "farMatI: " << farMatIHost(workingNodeHost(i))
                         << " row size: "
                         << clusterTreeHost(farMatIHost(workingNodeHost(i)), 3) -
