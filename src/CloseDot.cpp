@@ -23,7 +23,6 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       mMaxRelativeCoord * 3);
-  DeviceFloatMatrix queryResultPool("queryResultPool", mMaxRelativeCoord, 3);
 
   DeviceIntVector workingNode("workingNode", maxWorkSize);
 
@@ -37,7 +36,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   bool useSymmetry = mUseSymmetry;
 
-  while (workSize > 0) {
+  while (finishedNodeSize < closeNodeSize) {
     {
       workSize = min(maxWorkSize, closeNodeSize - finishedNodeSize);
 

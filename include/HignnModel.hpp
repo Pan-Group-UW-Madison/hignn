@@ -68,6 +68,7 @@ protected:
 #endif
 
   double mEpsilon;
+  double mEta;
 
   double mMaxFarFieldDistance;
 
@@ -128,11 +129,17 @@ public:
 
   void FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f);
 
+  void DenseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f);
+
   void Dot(pybind11::array_t<float> &uArray, pybind11::array_t<float> &fArray);
+  void DenseDot(pybind11::array_t<float> &uArray,
+                pybind11::array_t<float> &fArray);
 
   void UpdateCoord(pybind11::array_t<float> &coord);
 
   void SetEpsilon(const double epsilon);
+
+  void SetEta(const double eta);
 
   void SetMaxIter(const int maxIter);
 

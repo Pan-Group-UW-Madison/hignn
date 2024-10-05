@@ -18,6 +18,7 @@ PYBIND11_MODULE(hignn, m) {
       .def("load_two_body_model", &HignnModel::LoadTwoBodyModel)
       .def("load_three_body_model", &HignnModel::LoadThreeBodyModel)
       .def("set_epsilon", &HignnModel::SetEpsilon)
+      .def("set_eta", &HignnModel::SetEta)
       .def("set_max_iter", &HignnModel::SetMaxIter)
       .def("set_mat_pool_size_factor", &HignnModel::SetMatPoolSizeFactor)
       .def("set_max_far_dot_work_node_size",
@@ -27,7 +28,10 @@ PYBIND11_MODULE(hignn, m) {
       .def("set_use_symmetry_flag", &HignnModel::SetUseSymmetryFlag)
       .def("set_max_far_field_distance", &HignnModel::SetMaxFarFieldDistance)
       .def("update_coord", &HignnModel::UpdateCoord)
-      .def("dot", &HignnModel::Dot);
+      .def("dot", &HignnModel::Dot)
+      .def("dense_dot", pybind11::overload_cast<pybind11::array_t<float> &,
+                                                pybind11::array_t<float> &>(
+                            &HignnModel::DenseDot));
 
   py::class_<ExplicitEuler>(m, "ExplicitEuler")
       .def(py::init())

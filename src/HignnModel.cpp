@@ -252,6 +252,7 @@ HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
   MPI_Comm_size(MPI_COMM_WORLD, &mMPISize);
 
   mEpsilon = 0.05;
+  mEta = 1.0;
   mMaxIter = 100;
   mMatPoolSizeFactor = 40;
 
@@ -418,6 +419,66 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
     printf("End of Dot. Dot time: %.4fs\n", (double)duration / 1e6);
 }
 
+void HignnModel::DenseDot(pybind11::array_t<float> &uArray,
+                          pybind11::array_t<float> &fArray) {
+  auto shape = fArray.shape();
+
+  DeviceDoubleMatrix u("u", shape[0], 3);
+  DeviceDoubleMatrix f("f", shape[0], 3);
+
+  // initialize u
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, u.extent(0)),
+      KOKKOS_LAMBDA(const int i) {
+        u(i, 0) = 0.0;
+        u(i, 1) = 0.0;
+        u(i, 2) = 0.0;
+      });
+  Kokkos::fence();
+
+  auto fData = fArray.unchecked<2>();
+  auto uData = uArray.mutable_unchecked<2>();
+
+  DeviceDoubleMatrix::HostMirror hostF = Kokkos::create_mirror_view(f);
+
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0, f.extent(0)),
+      [&](const int i) {
+        hostF(i, 0) = fData(i, 0);
+        hostF(i, 1) = fData(i, 1);
+        hostF(i, 2) = fData(i, 2);
+      });
+  Kokkos::fence();
+
+  Kokkos::deep_copy(f, hostF);
+
+  Reorder(mReorderedMap, f);
+
+  DenseDot(u, f);
+
+  DeviceDoubleMatrix::HostMirror hostU = Kokkos::create_mirror_view(u);
+
+  Kokkos::deep_copy(hostU, u);
+
+  MPI_Allreduce(MPI_IN_PLACE, hostU.data(), u.extent(0) * u.extent(1),
+                MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+  Kokkos::deep_copy(u, hostU);
+
+  BackwardReorder(mReorderedMap, u);
+
+  Kokkos::deep_copy(hostU, u);
+
+  Kokkos::parallel_for(
+      Kokkos::RangePolicy<Kokkos::DefaultHostExecutionSpace>(0, u.extent(0)),
+      [&](const int i) {
+        uData(i, 0) = hostU(i, 0);
+        uData(i, 1) = hostU(i, 1);
+        uData(i, 2) = hostU(i, 2);
+      });
+  Kokkos::fence();
+}
+
 void HignnModel::UpdateCoord(pybind11::array_t<float> &coord) {
   auto data = coord.unchecked<2>();
 
@@ -438,6 +499,10 @@ void HignnModel::UpdateCoord(pybind11::array_t<float> &coord) {
 
 void HignnModel::SetEpsilon(const double epsilon) {
   mEpsilon = epsilon;
+}
+
+void HignnModel::SetEta(const double eta) {
+  mEta = eta;
 }
 
 void HignnModel::SetMaxIter(const int maxIter) {

@@ -15,7 +15,7 @@ class Net(torch.nn.Module):
         y[:, 4] += 1.0
         y[:, 8] += 1.0
         y = y / r
-        y[(r < 0.00001).nonzero(), :] = torch.tensor(
+        y[(r < 0.00001).nonzero()[:, 0].flatten(), :] = torch.tensor(
                 [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], dtype=torch.float32, device=x.device)
         return y
     

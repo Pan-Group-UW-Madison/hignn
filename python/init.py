@@ -42,6 +42,9 @@ if __name__ == '__main__':
     else:
         if not os.path.exists(source_path + '/nn/'+model_name+'.pt'):
             need_convert = True
+            
+    if args.rebuild:
+        need_convert = True
     
     if need_convert:
         if is_gpu_available:
