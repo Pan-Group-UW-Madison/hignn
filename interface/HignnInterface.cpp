@@ -1,6 +1,7 @@
 #include "HignnModel.hpp"
 #include "TimeIntegrator.hpp"
 #include "PotentialForce.hpp"
+#include "NeighborLists.hpp"
 
 template <typename... Args>
 using overload_cast_ = pybind11::detail::overload_cast_impl<Args...>;
@@ -66,4 +67,24 @@ PYBIND11_MODULE(hignn, m) {
       .def("set_domain", &PotentialForce::SetDomain)
       .def("set_two_body_epsilon", &PotentialForce::SetTwoBodyEpsilon)
       .def("get_potential_force", &PotentialForce::GetPotentialForce);
+
+  py::class_<NeighborLists>(m, "NeighborLists")
+      .def(py::init())
+      .def("set_periodic", &NeighborLists::SetPeriodic)
+      .def("set_domain", &NeighborLists::SetDomain)
+      .def("update_coord", &NeighborLists::UpdateCoord)
+      .def("set_two_body_epsilon", &NeighborLists::SetTwoBodyEpsilon)
+      .def("set_three_body_epsilon", &NeighborLists::SetThreeBodyEpsilon)
+      .def("get_two_body_edge_info", &NeighborLists::GetTwoBodyEdgeInfo)
+      .def("get_two_body_edge_info_by_index",
+           &NeighborLists::GetTwoBodyEdgeInfoByIndex)
+      .def("get_three_body_edge_info", &NeighborLists::GetThreeBodyEdgeInfo)
+      .def("get_three_body_edge_info_by_index",
+           &NeighborLists::GetThreeBodyEdgeInfoByIndex)
+      .def("get_three_body_edge_self_info",
+           &NeighborLists::GetThreeBodyEdgeSelfInfo)
+      .def("get_three_body_edge_self_info_by_index",
+           &NeighborLists::GetThreeBodyEdgeSelfInfoByIndex)
+      .def("build_two_body_info", &NeighborLists::BuildTwoBodyInfo)
+      .def("build_three_body_info", &NeighborLists::BuildThreeBodyInfo);
 }
