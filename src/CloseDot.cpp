@@ -68,7 +68,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           workSize = (lowerWorkSize + upperWorkSize) / 2;
         } else {
           if (upperWorkSize - lowerWorkSize <= 1) {
-            workSize = lowerWorkSize;
+            workSize = max(1, lowerWorkSize);
             break;
           } else {
             lowerWorkSize = workSize;
