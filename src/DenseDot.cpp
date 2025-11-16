@@ -1,24 +1,5 @@
 #include "HignnModel.hpp"
 
-/**
- * @brief Computes the updated velocities using the original two-body
- * hydrodynamic mobility tensor.
- *
- * This function applies the two-body interaction model to all particle
- * pairs, evaluating the hydrodynamic velocities resulting from the provided
- * acting forces. The workload is divided among MPI ranks and further
- * parallelized using Kokkos. All pairwise interactions are processed, without
- * distinguishing between 'close' or 'far' nodes, resulting in dense evaluation
- * of the mobility tensor. The function dynamically adapts the work size and
- * batches to control memory usage, and leverages the TorchScript model for
- * inference on each pair’s relative coordinates.
- *
- * @param u [in, out] A matrix of size (num_particles, 3) representing the
- * velocities of the particles. The velocities are calculated from all pairwise
- * hydrodynamic interactions with respect to the acting forces.
- * @param f [in] A matrix of size (num_particles, 3) representing the forces
- * applied to the particles.
- */
 void HignnModel::DenseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   if (mMPIRank == 0)
     std::cout << "start of DenseDot" << std::endl;

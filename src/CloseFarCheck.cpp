@@ -1,13 +1,5 @@
 #include "HignnModel.hpp"
 
-/**
- * @brief Use the clustering tree to divide the particles into different sizes
- * of blocks as nodes of the clustering tree. Determines if any two nodes are
- * 'far' or 'close'. The node pair is considered 'far' based on bounding boxes
- * of the particles included in the node and the relative difference between the
- * nodes.
- */
-
 void HignnModel::CloseFarCheck() {
   MPI_Barrier(MPI_COMM_WORLD);
   std::chrono::high_resolution_clock::time_point t1 =

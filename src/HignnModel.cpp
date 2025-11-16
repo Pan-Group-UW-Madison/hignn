@@ -5,14 +5,6 @@
 using namespace std;
 using namespace std::chrono;
 
-/**
- * @brief Initialize MPI (if needed) and Kokkos runtime for parallel
- * computations.
- *
- * Sets up the computational environment for either CPU or GPU based on
- * compile-time flags. This is required before any parallel computation using
- * HignnModel.
- */
 void Init() {
   int flag;
 
@@ -41,38 +33,16 @@ void Init() {
   Kokkos::initialize(settings);
 }
 
-/**
- * @brief Finalize Kokkos runtime.
- */
 void Finalize() {
   Kokkos::finalize();
 
   // MPI_Finalize();
 }
 
-/**
- * @brief Get the number of particles in the model.
- *
- * @return size_t The number of particles in the model.
- */
 size_t HignnModel::GetCount() {
   return mCoordPtr->extent(0);
 }
 
-/**
- * @brief Computes the minimum and maximum values for each dimension (x, y, z)
- *        over a specified range of particle indices.
- *
- * This function iterates over the range of particles and updates the auxiliary
- * vector such that for each spatial dimension d, aux[2 * d] stores the minimum
- * and aux[2 * d + 1] stores the maximum coordinate value found in that
- * dimension across all particles in the specified range.
- *
- * @param first The index of the first particle in the range.
- * @param last The index one past the last particle in the range.
- * @param aux A vector of size (2 * mDim) which will be filled with the minimum
- *            and maximum values for each spatial dimension.
- */
 void HignnModel::ComputeAux(const std::size_t first,
                             const std::size_t last,
                             std::vector<float> &aux) {
@@ -94,28 +64,6 @@ void HignnModel::ComputeAux(const std::size_t first,
     }
 }
 
-/**
- * @brief Divides particles and reorders them based on their spatial
- * coordinates over a specified range of particle indices.
- *
- * This function partitions the specified range of particle indices [first,
- * last) and reorders them based on spatial coordinates using principal
- * component analysis (PCA). The process computes the mean position, centers the
- * coordinates, performs SVD to find the dominant direction, and then sorts the
- * particles along this direction. The particles are thus grouped into clusters
- * for efficient processing. If parallelFlag is true, parts of the computation
- * are performed in parallel for performance.
- *
- * @param first [in] The index of the first particle in the range to consider.
- * @param last [in] The index one past the last particle in the range.
- * @param reorderedMap [in,out] A vector that holds the reordered particle
- * indices after processing. On output, it contains the new ordering for indices
- * in [first, last).
- * @param parallelFlag [in] If true, enables parallel computation where
- * possible.
- *
- * @return The index in reorderedMap where the division ends.
- */
 size_t HignnModel::Divide(const std::size_t first,
                           const std::size_t last,
                           std::vector<std::size_t> &reorderedMap,
@@ -197,19 +145,6 @@ size_t HignnModel::Divide(const std::size_t first,
   return (std::size_t)(result - temp.begin()) + first;
 }
 
-/**
- * @brief Reorders the particle coordinates in both host and device memory based
- * on the provided index mapping.
- *
- * The host-side coordinates are first copied to a temporary buffer, then
- * rearranged according to the order specified in reorderedMap. After
- * reordering, the i-th row of the coordinates corresponds to the particle
- * originally at index reorderedMap[i]. The device-side coordinates are then
- * updated to reflect this new order.
- *
- * @param reorderedMap A vector of size (num_particles) specifying the new order
- * of particle indices.
- */
 void HignnModel::Reorder(const std::vector<std::size_t> &reorderedMap) {
   auto &mVertexMirror = *mCoordMirrorPtr;
   auto &mVertex = *mCoordPtr;
@@ -236,19 +171,6 @@ void HignnModel::Reorder(const std::vector<std::size_t> &reorderedMap) {
   Kokkos::deep_copy(mVertex, mVertexMirror);
 }
 
-/**
- * @brief Reorders the rows of the given device matrix v based on the provided
- * index mapping.
- *
- * Produces a reordered copy of the matrix v so that row i of the result is
- * taken from row reorderedMap[i] of the original matrix. The matrix v is
- * updated in place in device memory.
- *
- * @param reorderedMap A vector of size (num_particles) specifying the new order
- * for the rows of v.
- * @param v The device matrix of size (num_particles, 3) to be reordered in
- * place.
- */
 void HignnModel::Reorder(const std::vector<size_t> &reorderedMap,
                          DeviceDoubleMatrix v) {
   // Create a device matrix for the reordered result
@@ -276,20 +198,6 @@ void HignnModel::Reorder(const std::vector<size_t> &reorderedMap,
   Kokkos::deep_copy(v, vCopy);
 }
 
-/**
- * @brief Reverses the reordering of the rows of the given matrix v based on the
- * provided index mapping.
- *
- * This function restores the original row order of the matrix v (of size
- * [num_particles, 3]) using the mapping provided by reorderedMap (vector of
- * size num_nodes). The mapping is applied on the device using Kokkos
- * parallelism for efficient performance.
- *
- * @param reorderedMap A vector of size (num_particles) specifying the original
- * row order to restore in v.
- * @param v The device matrix of size (num_particles, 3) to be reordered back.
- * After the function, v will have its rows placed back into the original order.
- */
 void HignnModel::BackwardReorder(const std::vector<size_t> &reorderedMap,
                                  DeviceDoubleMatrix v) {
   // Create a temporary copy of v with the same dimensions
@@ -319,19 +227,6 @@ void HignnModel::BackwardReorder(const std::vector<size_t> &reorderedMap,
   Kokkos::deep_copy(v, vCopy);
 }
 
-/**
- * @brief Constructor for the HignnModel class.
- *
- * Initializes the model by setting default parameters and allocating memory for
- * the particle coordinates. Sets up the coordinate arrays on both host and
- * device, copies the input coordinates to internal storage, and initializes MPI
- * rank/size and other model parameters.
- *
- * @param coord A 2D numpy array (dimension: num_particles × 3) containing the
- * (x, y, z) positions of all particles.
- * @param blockSize The maximum number of particles allowed in a leaf node (a
- * cluster in the tree that is not further subdivided) during spatial division.
- */
 HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
   // default values
   mPostCheckFlag = false;
@@ -385,20 +280,6 @@ HignnModel::HignnModel(pybind11::array_t<float> &coord, const int blockSize) {
 #endif
 }
 
-/**
- * @brief Loads a pre-trained two-body interaction model from the given file
- * path.
- *
- * Loads the model using TorchScript, selecting the appropriate device (CPU or
- * GPU) based on compile-time configuration. For GPU builds, appends the CUDA
- * device ID to the filename to support multi-GPU execution. After loading, the
- * model is moved to the selected device, and a test forward pass is performed
- * with a dummy input tensor of shape (50000, 3) to ensure the model is ready
- * for inference.
- *
- * @param modelPath The base name (without ".pt" extension) of the two-body
- * model file.
- */
 void HignnModel::LoadTwoBodyModel(const std::string &modelPath) {
   // load script model
 #if USE_GPU
@@ -432,53 +313,16 @@ void HignnModel::LoadTwoBodyModel(const std::string &modelPath) {
   auto testResult = mTwoBodyModel.forward(inputs);
 }
 
-/**
- * @brief Loads a pre-trained three-body interaction model from the given file
- * path.
- *
- * Currently, three body model is loaded on the python side as no acceleration
- * via C++/Kokkos when doing dot product w.r.t. three-body model.
- *
- * @param modelPath The path to the three-body model file (currently unused).
- */
-void HignnModel::LoadThreeBodyModel([
-    [maybe_unused]] const std::string &modelPath) {
+void HignnModel::LoadThreeBodyModel(
+    [[maybe_unused]] const std::string &modelPath) {
 }
 
-/**
- * @brief Updates the model's state by rebuilding the cluster tree and updating
- * close/far pair information.
- *
- * This method should be called after the coordinates are changed. It rebuilds
- * the internal clustering structure (via Build), then identifies which node
- * pairs are close and which are far for subsequent computations (via
- * CloseFarCheck).
- */
 void HignnModel::Update() {
   Build();
 
   CloseFarCheck();
 }
 
-/**
- * @brief Determines if two nodes are considered 'far' based on bounding boxes
- * and relative distances.
- *
- * Uses the domain of the bounding box of the node and a distance criterion to
- * decide if node1 and node2 should be treated as 'far' pairs, which enables the
- * use of matrix acceleration in subsequent computations. The function first
- * checks if the bounding boxes (defined by minimum and maximum coordinates) of
- * node1 and node2 are disjoint. If they are, the nodes are considered 'far'.
- * Otherwise, it further checks the relative distance and size of their bounding
- * boxes.
- *
- * @param aux      HostFloatMatrix of shape (num_particles, 6), where each row
- * contains the min and max coordinates for x, y, z: [xmin, xmax, ymin, ymax,
- * zmin, zmax].
- * @param node1    Index of the first node (row in aux).
- * @param node2    Index of the second node (row in aux).
- * @return         true if the nodes are considered 'far', false otherwise.
- */
 bool HignnModel::CloseFarCheck(HostFloatMatrix aux,
                                const std::size_t node1,
                                const std::size_t node2) {
@@ -517,31 +361,6 @@ bool HignnModel::CloseFarCheck(HostFloatMatrix aux,
   return isFar;
 }
 
-/**
- * @brief Computes hydrodynamic interaction and update the velocities from the
- * given forces using hierarchical matrix acceleration to the mobility tensor.
- *
- * This function calculates the particle velocities (mobility problem) by
- * applying the hierarchical matrix acceleration when calculating the product
- * between the mobility tensor and the input forces. It supports distributed
- * execution based on MPI and optionally runs a post-processing check. The
- * function performs the following steps:
- *   - Initializes local velocity and force arrays (both with dimensions
- * [num_particles, 3]).
- *   - Copies force data from Python array into device memory.
- *   - Reorders the force array aligning with the node ordering of the
- * clustering tree.
- *   - Computes the close- and far-field contributions to the velocities.
- *   - Collects and sums the results across all MPI ranks.
- *   - Optionally verifies the result if post-check is enabled.
- *   - Restores the velocity array to the original ordering.
- *   - Copies the computed velocities back to the output Python array.
- *
- * @param uArray [out] Output array (num_particles, 3) to be filled with
- * computed velocities for each particle.
- * @param fArray [in]  Input array (num_particles, 3) of forces acting on each
- * particle.
- */
 void HignnModel::Dot(pybind11::array_t<float> &uArray,
                      pybind11::array_t<float> &fArray) {
   if (mMPIRank == 0)
@@ -633,30 +452,6 @@ void HignnModel::Dot(pybind11::array_t<float> &uArray,
     printf("End of Dot. Dot time: %.4fs\n", (double)duration / 1e6);
 }
 
-/**
- * @brief Computes hydrodynamic interaction and update the velocities from the
- * given forces using the dense mobility tensor.
- *
- * This function applies the dense (without hierarchical matrix acceleration)
- * mobility tensor to the input force array to compute the resulting velocities.
- * The result is aggregated across all MPI ranks.
- *
- * Workflow:
- * - Allocates velocity and force arrays (each of shape [num_particles, 3]).
- * - Initializes the velocity array to zero.
- * - Copies the input force array into device memory.
- * - Reorders the force array aligning with the node ordering of the
- * clustering tree.
- * - Calls DenseDot to compute velocities.
- * - Collects the result across MPI ranks using all-reduce.
- * - Restores the velocity array to the original ordering.
- * - Copies the result back into the output Python array.
- *
- * @param uArray [out] The computed velocities, numpy array of shape
- * (num_particles, 3).
- * @param fArray [in]  The input forces, numpy array of shape (num_particles,
- * 3).
- */
 void HignnModel::DenseDot(pybind11::array_t<float> &uArray,
                           pybind11::array_t<float> &fArray) {
   auto shape = fArray.shape();
@@ -761,102 +556,34 @@ void HignnModel::UpdateCoord(pybind11::array_t<float> &coord) {
   Update();
 }
 
-/**
- * @brief Sets the value of epsilon used by the adaptive cross approximation
- *
- * This function sets the value of the internal `mEpsilon` variable, which
- * controls the convergence criteria of the adaptive cross approximation used
- * in function FarDot.
- *
- * @param epsilon [in] The value to set for epsilon.
- */
 void HignnModel::SetEpsilon(const double epsilon) {
   mEpsilon = epsilon;
 }
 
-/**
- * @brief Set the eta parameter used in the clustering tree.
- *
- * This updates the mEta variable, affecting how close/far pairs are determined
- * in the clustering tree.
- *
- * @param eta The value to set for eta.
- */
 void HignnModel::SetEta(const double eta) {
   mEta = eta;
 }
 
-/**
- * @brief Set the maximum number of iterations for the adaptive cross
- * approximation.
- *
- * This updates mMaxIter, controlling how many iterations are performed by the
- * algorithm.
- *
- * @param maxIter The maximum number of iterations to perform.
- */
 void HignnModel::SetMaxIter(const int maxIter) {
   mMaxIter = maxIter;
 }
 
-/**
- * @brief Set the factor that determines the size of the matrix pool.
- *
- * This updates mMatPoolSizeFactor, which is used to preallocate memory for
- * FarDot and optimize performance.
- *
- * @param factor The matrix pool size factor.
- */
 void HignnModel::SetMatPoolSizeFactor(const int factor) {
   mMatPoolSizeFactor = factor;
 }
 
-/**
- * @brief Enable or disable post-check operations.
- *
- * Sets the mPostCheckFlag variable, which controls whether post-checking is
- * performed after computation.
- *
- * @param flag Boolean flag: true to enable post-checking, false to disable.
- */
 void HignnModel::SetPostCheckFlag(const bool flag) {
   mPostCheckFlag = flag;
 }
 
-/**
- * @brief Enable or disable symmetry in the model.
- *
- * Sets the mUseSymmetry variable, allowing the algorithm to optimize
- * calculations if symmetry is present.
- *
- * @param flag Boolean flag: true to use symmetry, false to disable.
- */
 void HignnModel::SetUseSymmetryFlag(const bool flag) {
   mUseSymmetry = flag;
 }
 
-/**
- * @brief Set the maximum number of node pairs for far-range interactions.
- *
- * Updates mMaxFarDotWorkNodeSize, which controls the upper limit of node pairs
- * for FarDot computations.
- *
- * @param size The maximum number of node pairs that can work simultaneously.
- */
 void HignnModel::SetMaxFarDotWorkNodeSize(const int size) {
   mMaxFarDotWorkNodeSize = size;
 }
 
-/**
- * @brief Set the maximum number of relative coordinates that can be passed
- * forward to the two-body model.
- *
- * Sets mMaxRelativeCoord, which determines the upper bound for storage and
- * queries in CloseDot and FarDot.
- *
- * @param size The maximum number of relative coordinates that can be used in
- * single forward pass when querying the two-body model.
- */
 void HignnModel::SetMaxRelativeCoord(const size_t size) {
   mMaxRelativeCoord = size;
 }

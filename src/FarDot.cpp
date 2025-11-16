@@ -1,6 +1,6 @@
 #include "HignnModel.hpp"
 
-//!< Kokkos reduction for array data
+// Kokkos reduction for array data
 struct ArrReduce {
   double values[6];
 
@@ -37,34 +37,10 @@ struct reduction_identity<ArrReduce> {
 };
 }  // namespace Kokkos
 
-/**
- * @brief Evaluates the updated velocity due to far-range hydrodynamic
- *        interactions with the input acting forces.
- *
- * This function handles the parallel computation of interactions between node
- * pairs that are marked as `far` on the clustering tree. The workload is
- * divided into adaptive batches to control the maximum memory usage. Kokkos is
- * used for parallel execution. The function dynamically adjusts the batch size
- * based on the estimated workload and then:
- *   - Builds C- and Q-matrices by querying the two-body model with each pair’s
- *     relative coordinates.
- *   - Applies a low-rank stopping criterion using an adaptive iterative process
- *     inspired by the power-iteration method.
- *   - Accumulates the contributions into the velocity array (u += C·(Q·f)),
- *     with optional symmetry-based updates.
- *
- * @param u [in, out] A 2D array of size (num_particles, 3) representing the
- * velocities of the particles. The velocities are incremented by the resulting
- * velocity contributions due to the far-range hydrodynamic interactions with
- * respect to the acting forces.
- * @param f [in] A 2D array of size (num_particles, 3) representing the forces
- * applied to the particles.
- */
-
 void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
-  //!< Captures the current time to start measuring elapsed time for performance
-  //!< tracking.
+  // Captures the current time to start measuring elapsed time for performance
+  // tracking.
 
   if (mMPIRank == 0)
     std::cout << "start of FarDot" << std::endl;
@@ -91,8 +67,8 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   const int maxWorkNodeSize = mMaxFarDotWorkNodeSize;
   const int maxIter = mMaxIter;
   const int middleMatPoolSize = maxWorkNodeSize * maxIter;
-  int workNodeSize = 0;     //!< Number of node pairs in current batch.
-  int allowedWorkload = 0;  //!< Maximum workload allowed in current batch.
+  int workNodeSize = 0;     // Number of node pairs in current batch.
+  int allowedWorkload = 0;  // Maximum workload allowed in current batch.
 
   const bool postCheck = false;
 
@@ -100,74 +76,74 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   DeviceFloatVector relativeCoordPool(
       "relativeCoordPool",
       maxRelativeCoord *
-          3);  //!< Stores the relative coordinates of the particles.
+          3);  // Stores the relative coordinates of the particles.
   DeviceDoubleMatrix cMatPool("cMatPool", matPoolSize,
-                              9);  //!< Pool for C matrices.
+                              9);  // Pool for C matrices.
   DeviceDoubleMatrix qMatPool("qMatPool", matPoolSize,
-                              9);  //!< Pool for Q matrices.
+                              9);  // Pool for Q matrices.
   DeviceDoubleVector middleMatPool(
       "middleMatPool",
-      middleMatPoolSize * 3);  //!< Middle matrix pool for accumulation.
+      middleMatPoolSize * 3);  // Middle matrix pool for accumulation.
   DeviceDoubleMatrix ckMatPool("ckMatPool", maxRelativeCoord,
-                               9);  //!< Temporary C matrices.
+                               9);  // Temporary C matrices.
   DeviceDoubleMatrix ckInvMatPool("ckInvMatPool", maxWorkNodeSize,
-                                  9);  //!< Inverses of temporary C matrices.
+                                  9);  // Inverses of temporary C matrices.
 
   DeviceIntVector workingNode(
       "workingNode",
-      maxWorkNodeSize);  //!< Holds node indices for the current batch.
+      maxWorkNodeSize);  // Holds node indices for the current batch.
   DeviceIntVector dotProductNode(
       "dotProductNode",
-      maxWorkNodeSize);  //!< Nodes for dot product in final step.
+      maxWorkNodeSize);  // Nodes for dot product in final step.
   DeviceIntVector dotProductRank(
-      "dotProductRank", maxWorkNodeSize);  //!< Ranks for dot product nodes.
+      "dotProductRank", maxWorkNodeSize);  // Ranks for dot product nodes.
   DeviceIntVector stopNode(
-      "stopNode", maxWorkNodeSize);  //!< Flags to signal stopping criterion.
+      "stopNode", maxWorkNodeSize);  // Flags to signal stopping criterion.
   DeviceIntMatrix workingNodeCMatOffset(
       "workingNodeCMatOffset", maxWorkNodeSize,
-      maxIter);  //!< Offset in cMatPool for each working node and each
-                 //!< iteration.
+      maxIter);  // Offset in cMatPool for each working node and each
+                 // iteration.
   DeviceIntMatrix workingNodeQMatOffset(
       "workingNodeQMatOffset", maxWorkNodeSize,
-      maxIter);  //!< Offset in qMatPool for each working node and each
-                 //!< iteration.
+      maxIter);  // Offset in qMatPool for each working node and each
+                 // iteration.
   DeviceIntMatrix workingNodeSelectedColIdx("workingNodeSelectedColIdx",
                                             maxWorkNodeSize,
-                                            maxIter);  //!< Column indices used.
+                                            maxIter);  // Column indices used.
   DeviceIntMatrix workingNodeSelectedRowIdx("workingNodeSelectedRowIdx",
                                             maxWorkNodeSize,
-                                            maxIter);  //!< Row indices used.
+                                            maxIter);  // Row indices used.
   DeviceIntVector workingNodeIteration(
       "workingNodeIteration",
-      maxWorkNodeSize);  //!< Iteration counters for nodes.
+      maxWorkNodeSize);  // Iteration counters for nodes.
 
   DeviceIntVector workingNodeCopy(
       "workingNodeCopy",
-      maxWorkNodeSize * maxIter);  //!< Used for copying node arrays.
+      maxWorkNodeSize * maxIter);  // Used for copying node arrays.
   DeviceIntVector workingNodeCopyOffset(
       "workingNodeCopyOffset",
-      maxWorkNodeSize);  //!< Copy offsets for node arrays.
+      maxWorkNodeSize);  // Copy offsets for node arrays.
 
-  DeviceDoubleVector nu2(
-      "nu2", maxWorkNodeSize);  //!< Stores power-iteration numerators for
-                                //!< stopping criterion.
+  DeviceDoubleVector nu2("nu2",
+                         maxWorkNodeSize);  // Stores power-iteration numerators
+                                            // for stopping criterion.
   DeviceDoubleVector mu2(
-      "mu", maxWorkNodeSize);  //!< Stores power-iteration denominators for
-                               //!< stopping criterion.
+      "mu", maxWorkNodeSize);  // Stores power-iteration denominators for
+                               // stopping criterion.
 
   DeviceDoubleVector workingNodeDoubleCopy(
       "workingNodeDoubleCopy",
-      maxWorkNodeSize);  //!< Used for copying mu2.
+      maxWorkNodeSize);  // Used for copying mu2.
 
   DeviceIntVector uDotCheck(
-      "uDotCheck", maxWorkNodeSize);  //!< Used for velocity post-checking.
+      "uDotCheck", maxWorkNodeSize);  // Used for velocity post-checking.
 
   const double epsilon = mEpsilon;
   const double epsilon2 = epsilon * epsilon;
 
   DeviceIntVector relativeCoordOffset(
       "relativeCoordOffset",
-      maxWorkNodeSize);  //!< Offsets for relative coordinates.
+      maxWorkNodeSize);  // Offsets for relative coordinates.
 
   // Short references for large data structures
   auto &mFarMatI = *mFarMatIPtr;
@@ -175,10 +151,10 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   auto &mCoord = *mCoordPtr;
   auto &mClusterTree = *mClusterTreePtr;
 
-  const int farNodeSize = mFarMatI.extent(0);  //!< Number of far node pairs
-  int finishedNodeSize = 0;  //!< Number of node pairs processed so far.
-  int installedNode = 0;     //!< Next node index to be installed for batch.
-  int totalCoord = 0;        //!< Tracks total coordinates processed in a batch.
+  const int farNodeSize = mFarMatI.extent(0);  // Number of far node pairs
+  int finishedNodeSize = 0;  // Number of node pairs processed so far.
+  int installedNode = 0;     // Next node index to be installed for batch.
+  int totalCoord = 0;        // Tracks total coordinates processed in a batch.
 
   bool farDotFinished = false;
 
@@ -1101,7 +1077,7 @@ void HignnModel::FarDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             // Check stopping criterion for this batch/node.
             if (nu2(i) < mu2(i) * epsilon2 ||
                 workingNodeIteration(i) >= maxIter ||
-                workingNodeIteration(i) >= min(rowSize, colSize)) {
+                workingNodeIteration(i) >= std::min(rowSize, colSize)) {
               stopNode(i) = -1;
             } else {
               stopNode(i) = 0;

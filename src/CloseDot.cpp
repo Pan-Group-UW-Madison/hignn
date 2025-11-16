@@ -4,28 +4,10 @@
 
 using namespace std;
 
-/**
- * @brief Evaluates the updated velocity due to close-range hydrodynamic
- * interactions with the input acting forces.
- *
- * This function handles the parallel computation of interactions between node
- * pairs that are marked as `close` on the clustering tree. The workload is
- * divided into smaller batches to save memory usage. Kokkos is used for
- * parallel execution. The function dynamically adjusts the work size based on
- * the estimated workload for each batch.
- *
- * @param u [in, out] A 2D array of size (num_particles, 3) representing the
- * velocities of the particles. The velocities are added with the resulting
- * velocity due to the close-range hydrodynamic interactions w.r.t the acting
- * forces.
- * @param f [in] A 2D array of size (num_particles, 3) representing the forces
- * applied to the particles.
- */
-
 void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
-  //!< Captures the current time to start measuring elapsed time for performance
-  //!< tracking.
+  // Captures the current time to start measuring elapsed time for performance
+  // tracking.
 
   if (mMPIRank == 0)
     std::cout << "start of CloseDot" << std::endl;
@@ -35,16 +17,15 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   double queryDuration = 0;
   double dotDuration = 0;
 
-  /** Set the total number of close node pairs and the maximum size of the batch
-   * that will be processed at once. */
-  const int closeNodeSize = mCloseMatIPtr->extent(
-      0);  //!< Stores the number of close node pairs to be processed.
-  const int maxWorkSize = 1000;  //!< Maximum close node pairs per batch.
-  int workSize = std::min(
-      maxWorkSize,
-      closeNodeSize);  //!< Close node pairs for current batch, constrained by
-                       //!< maxWorkSize and the number of close node pairs.
-  int finishedNodeSize = 0;  //!< Number of node pairs that have been processed.
+  // Set the total number of close node pairs and the maximum size of the batch
+  // that will be processed at once.
+  const int closeNodeSize = mCloseMatIPtr->extent(0);
+  // Stores the number of close node pairs to be processed.
+  const int maxWorkSize = 1000;  // Maximum close node pairs per batch.
+  int workSize = std::min(maxWorkSize, closeNodeSize);
+  // Close node pairs for current batch, constrained by
+  // maxWorkSize and the number of close node pairs.
+  int finishedNodeSize = 0;  // Number of node pairs that have been processed.
 
   // Variables to track the total number of queries and iterations processed.
   std::size_t totalNumQuery = 0;
@@ -53,13 +34,13 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
   // Vectors for storing relative coordinates and node work assignments.
   DeviceFloatVector relativeCoordPool("relativeCoordPool",
                                       mMaxRelativeCoord * 3);
-  //!< Stores the relative coordinates of the particles.
+  // Stores the relative coordinates of the particles.
 
   DeviceIntVector workingNode("workingNode", maxWorkSize);
-  //!< Holds node indices for the current batch.
+  // Holds node indices for the current batch.
 
   DeviceIntVector relativeCoordSize("relativeCoordSize", maxWorkSize);
-  //!< Stores work size for each node pair.
+  // Stores work size for each node pair.
   DeviceIntVector relativeCoordOffset("relativeCoordOffset", maxWorkSize);
 
   auto &mCloseMatI = *mCloseMatIPtr;
@@ -69,20 +50,20 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
 
   bool useSymmetry = mUseSymmetry;
 
-  /** Begin processing node pairs in batches */
+  // Begin processing node pairs in batches
   while (finishedNodeSize < closeNodeSize) {
     {
       workSize = min(maxWorkSize, closeNodeSize - finishedNodeSize);
-      //!< Update work size based on remaining node pairs.
+      // Update work size based on remaining node pairs.
 
       // Define bounds for adjusting work size.
       int lowerWorkSize = 0;
       int upperWorkSize = workSize;
 
-      /** Dynamically adjust work size based on estimated workload. */
+      // Dynamically adjust work size based on estimated workload.
       while (true) {
         int estimatedWorkload = 0;
-        //!< Variable to store the estimated workload for the current batch.
+        // Variable to store the estimated workload for the current batch.
 
         // Parallel reduction to estimate workload by summing the work sizes of
         // node pairs.
@@ -99,26 +80,26 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
               const int indexJEnd = mClusterTree(nodeJ, 3);
               const int workSizeJ = indexJEnd - indexJStart;
 
-              tSum += workSizeI * workSizeJ;  //!< Update the total estimated
-                                              //!< workload for the batch.
+              tSum += workSizeI * workSizeJ;  // Update the total estimated
+                                              // workload for the batch.
             },
             Kokkos::Sum<int>(estimatedWorkload));
 
-        /** Adjustment of work size if estimated workload exceeds the maximum
-         * allowed */
+        // Adjustment of work size if estimated workload exceeds the maximum
+        // allowed.
         if (estimatedWorkload > (int)mMaxRelativeCoord) {
           upperWorkSize = workSize;
           workSize = (lowerWorkSize + upperWorkSize) / 2;
-          //!< Refine work size to distribute workload.
+          // Refine work size to distribute workload.
         } else {
           if (upperWorkSize - lowerWorkSize <= 1) {
             workSize = max(1, lowerWorkSize);
-            //!< Finalize work size if difference between bounds is small.
+            // Finalize work size if difference between bounds is small.
             break;
           } else {
             lowerWorkSize = workSize;
             workSize = (lowerWorkSize + upperWorkSize) / 2;
-            //!< Continue refining work size.
+            // Continue refining work size.
           }
         }
       }
@@ -128,7 +109,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
         Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
         KOKKOS_LAMBDA(const std::size_t i) {
           workingNode(i) = i + finishedNodeSize;
-          //!< Assign node pairs to be processed in this batch.
+          // Assign node pairs to be processed in this batch.
         });
     Kokkos::fence();
 
@@ -151,16 +132,16 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           const int workSizeJ = indexJEnd - indexJStart;
 
           relativeCoordSize(rank) = workSizeI * workSizeJ;
-          //!< Store the work size for this batch.
+          // Store the work size for this batch.
 
           tSum += workSizeI * workSizeJ;
-          //!< Update the total coordinate count.
+          // Update the total coordinate count.
         },
         Kokkos::Sum<int>(totalCoord));
     Kokkos::fence();
 
     totalNumQuery += totalCoord;
-    //!< Update the total number of queries.
+    // Update the total number of queries.
 
     Kokkos::parallel_for(
         Kokkos::RangePolicy<Kokkos::DefaultExecutionSpace>(0, workSize),
@@ -168,12 +149,12 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
           relativeCoordOffset(rank) = 0;
           for (int i = 0; i < rank; i++) {
             relativeCoordOffset(rank) += relativeCoordSize(i);
-            //!< Calculate offset for relative coordinates.
+            // Calculate offset for relative coordinates.
           }
         });
     Kokkos::fence();
 
-    /** Calculate the relative coordinates. */
+    // Calculate the relative coordinates.
     Kokkos::parallel_for(
         Kokkos::TeamPolicy<Kokkos::DefaultExecutionSpace>(workSize,
                                                           Kokkos::AUTO()),
@@ -204,7 +185,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                 for (int l = 0; l < 3; l++) {
                   relativeCoordPool(3 * index + l) =
                       mCoord(indexJStart + k, l) - mCoord(indexIStart + j, l);
-                  //!< Calculate relative coordinate.
+                  // Calculate relative coordinate.
                 }
               });
         });
@@ -274,7 +255,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                         dataPtr[9 * (relativeOffset + index) + row * 3 + col] *
                         f(indexJStart + k, col);
                   Kokkos::atomic_add(&u(indexIStart + j, row), sum);
-                  //!< Accumulate results to u.
+                  // Accumulate results to u.
                 }
               });
 
@@ -292,7 +273,7 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
                                        col] *
                                f(indexIStart + j, col);
                       Kokkos::atomic_add(&u(indexJStart + k, row), sum);
-                      //!< Perform symmetry-based updates to u.
+                      // Perform symmetry-based updates to u.
                     }
                   });
             }
@@ -305,24 +286,24 @@ void HignnModel::CloseDot(DeviceDoubleMatrix u, DeviceDoubleMatrix f) {
             .count();
 
     finishedNodeSize += workSize;
-    //!< Update the count of processed node pairs.
+    // Update the count of processed node pairs.
   }
 
   MPI_Allreduce(MPI_IN_PLACE, &totalNumQuery, 1, MPI_LONG, MPI_SUM,
                 MPI_COMM_WORLD);
-  //!< Aggregate total number of queries across all MPI processes.
+  // Aggregate total number of queries across all MPI processes.
   MPI_Allreduce(MPI_IN_PLACE, &totalNumIter, 1, MPI_LONG, MPI_SUM,
                 MPI_COMM_WORLD);
-  ;  //!< Aggregate total number of iterations across all MPI processes.
+  ;  // Aggregate total number of iterations across all MPI processes.
   MPI_Allreduce(MPI_IN_PLACE, &queryDuration, 1, MPI_DOUBLE, MPI_MAX,
                 MPI_COMM_WORLD);
-  //!< Aggregate query duration across all MPI processes.
+  // Aggregate query duration across all MPI processes.
   MPI_Allreduce(MPI_IN_PLACE, &dotDuration, 1, MPI_DOUBLE, MPI_MAX,
                 MPI_COMM_WORLD);
-  //!< Aggregate dot duration across all MPI processes.
+  // Aggregate dot duration across all MPI processes.
 
   std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
-  //!< End the timer for performance tracking.
+  // End the timer for performance tracking.
 
   if (mMPIRank == 0) {
     printf(

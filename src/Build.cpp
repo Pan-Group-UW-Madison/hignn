@@ -6,13 +6,10 @@
  *
  * This function performs both a sequential (root rank) and parallel (all MPI
  * ranks) construction of the cluster tree, partitions data according to MPI
- * ranks, and initializes reordering structures.
- *
- * The resulting tree enables efficient identification of close and far particle
- * pairs for hierarchical matrix approximation.
- *
- * All key structures (reordered map, cluster tree) are broadcast to all ranks
- * and copied to the device for use in computation.
+ * ranks, and initializes reordering structures. The resulting tree enables
+ * efficient identification of close and far particle pairs for hierarchical
+ * matrix approximation. All key structures (reordered map, cluster tree) are
+ * broadcast to all ranks and copied to the device for use in computation.
  */
 void HignnModel::Build() {
   MPI_Barrier(MPI_COMM_WORLD);
