@@ -75,3 +75,10 @@ The test can be launched via
 pytest test/test_engine.py
 ```
 within the docker image.
+
+## Documentation
+
+HIGNN uses [Doxygen](https://www.doxygen.nl/index.html) for the generation of API documentation. To generate the documentation, one only needs to run the folllowing command:
+```[bash]
+doxygen Doxyfile
+```
