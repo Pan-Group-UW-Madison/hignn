@@ -33,6 +33,9 @@ affiliations:
 
 bibliography: paper.bib
 
+header-includes:
+  - \usepackage{caption}
+
 ---
 
 # Summary
@@ -44,7 +47,7 @@ learning. By incorporating hierarchical matrix ($\mathcal{H}$-matrix) techniques
 
 # Statement of need
 
-Simulating particulate suspensions in 3D poses substantial computational challenges [@ParticulateReview_Maxey2017], limiting prior work to small numbers of particles or requiring extensive computational resources [@townsend2024stokesian; @torre2025python; @singh2019pystokes, @Stokesdt]. This emphasizes the need for an efficient, scalable, and flexible toolkit that enables researchers to investigate practically relevant, large-scale suspensions, pushing the boundaries beyond previously accessible scales while minimizing computational resource demands. The present software addresses this gap by introducing the first linearly scalable toolkit capable of simulating suspensions with millions of particles or more using only modest resources, such as a few mid-range GPUs [@ma2025]. Beyond rigid passive particles, the $\mathcal{H}$-HIGNN toolkit is flexible to be extended to simulate suspensions of soft matter systems, such as flexible filaments or membranes, through the inclusion of additional interparticle interaction forces, and to support the simulation of active matter, such as microswimmers, by incorporating active forces or actuation fields. Therefore, this software offers a powerful platform for exploring hydrodynamic effects across a broad range of systems in soft and active matter.
+Simulating particulate suspensions in 3D poses substantial computational challenges [@ParticulateReview_Maxey2017], limiting prior work to small numbers of particles or requiring extensive computational resources [@townsend2024stokesian; @torre2025python; @singh2019pystokes; @Stokesdt]. This emphasizes the need for an efficient, scalable, and flexible toolkit that enables researchers to investigate practically relevant, large-scale suspensions, pushing the boundaries beyond previously accessible scales while minimizing computational resource demands. The present software addresses this gap by introducing the first linearly scalable toolkit capable of simulating suspensions with millions of particles or more using only modest resources, such as a few mid-range GPUs [@ma2025]. Beyond rigid passive particles, the $\mathcal{H}$-HIGNN toolkit is flexible to be extended to simulate suspensions of soft matter systems, such as flexible filaments (Figure \ref{fig:illustration}) or membranes, through the inclusion of additional interparticle interaction forces, and to support the simulation of active matter, such as microswimmers, by incorporating active forces or actuation fields. Therefore, this software offers a powerful platform for exploring hydrodynamic effects across a broad range of systems in soft and active matter.
 
 # Description of the software
 
@@ -58,9 +61,9 @@ __visualize.py__ handles the post-processing of all particles’ positions updat
 
 # Related software
 
-Stokesian Dynamics in Python [@townsend2024stokesian] is a Python implementation of the Stokesian Dynamics method for simulating particulate suspensions. It allows for simulating suspensions in both unbounded and periodic domains, with the capability to include particles of several different sizes. Due to its serial Python implementation, the software is limited to small-scale simulations.
+__Stokesian Dynamics in Python__ [@townsend2024stokesian] is a Python implementation of the Stokesian Dynamics method for simulating particulate suspensions. It allows for simulating suspensions in both unbounded and periodic domains, with the capability to include particles of several different sizes. Due to its serial Python implementation, the software is limited to small-scale simulations.
 
-Python-JAX-based Fast Stokesian Dynamics [@torre2025python] is a Python implementation of the fast Stokesian Dynamics method for simulating particulate suspensions. It relies on Google JAX library and leverages its Just-In-Time compilation capabilities. The method's reliance on solving a full linear system at each time step demands pre-computation and storage of the entire mobility matrix within GPU memory. If the matrix size surpasses GPU memory capacity, the high bandwidth advantage cannot be realized, limiting simulations using this software to the order of $10^4$ particles subject to the memory limitations of mid-range GPUs.
+__Python-JAX-based Fast Stokesian Dynamics__ [@torre2025python] is a Python implementation of the fast Stokesian Dynamics method for simulating particulate suspensions. It relies on Google JAX library and leverages its Just-In-Time compilation capabilities. The method's reliance on solving a full linear system at each time step demands pre-computation and storage of the entire mobility matrix within GPU memory. If the matrix size surpasses GPU memory capacity, the high bandwidth advantage cannot be realized, limiting simulations using this software to the order of $10^4$ particles subject to the memory limitations of mid-range GPUs.
 
 __PyStokes__ [@singh2019pystokes] is a Python library for computing phoretic and Stokesian hydrodynamic interactions between particles. It employs a grid-free approach that combines the integral formulations of the Laplace and Stokes equations with spectral expansions and Galerkin discretization. PyStokes has been used to model suspensions of microorganisms, synthetic autophoretic particles, and self-propelled droplets. Its computational cost scales quadratically with the number of particles, and simulations with up to $10^5$ particles can be accommodated on multicore computers.
 
@@ -73,6 +76,6 @@ __OpenFOAM__ [@olsen2023openfoam] also provides a solver for studying large-scal
 
 # Acknowledgments
 
-We gratefully acknowledge the funding support for this work provided by Army Research Office Grant No. W911NF2310256. During the preparation of this manuscript, the authors used ChatGPT (OpenAI) to assist with grammar correction and language polishing
+We gratefully acknowledge the funding support for this work provided by Army Research Office Grant No. W911NF2310256. During the preparation of this manuscript, the authors used ChatGPT (OpenAI) to assist with grammar correction and language polishing.
 
 # References
