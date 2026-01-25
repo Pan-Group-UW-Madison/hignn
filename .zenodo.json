@@ -1,0 +1,30 @@
+{
+    "title": "$\mathcal{H}$-HIGNN Toolkit: A Software for Efficient and Scalable Simulation of Large-Scale Particulate Suspensions Using GNNs and $\mathcal{H}$-Matrices",
+    "creators": [
+        {
+            "name": "Ye, Zisheng",
+            "affiliation": "Department of Mechanical Engineering, University of Wisconsin-Madison, Madison, WI, USA",
+            "orcid": "0000-0001-6675-9747"
+        },
+        {
+            "name": "Ma, Zhan",
+            "affiliation": "Department of Mechanical Engineering, University of Wisconsin-Madison, Madison, WI, USA"
+        },
+        {
+            "name": "Safdarian, Ebrahim",
+            "affiliation": "Department of Mechanical Engineering, University of Wisconsin-Madison, Madison, WI, USA"
+        },
+        {
+            "name": "Yazdani, Shirindokht",
+            "affiliation": "Department of Mechanical Engineering, University of Wisconsin-Madison, Madison, WI, USA"
+        },
+        {
+            "name": "Pan, Wenxiao",
+            "affiliation": "Department of Mechanical Engineering, University of Wisconsin-Madison, Madison, WI, USA",
+            "orcid": "0000-0002-2252-7888"
+        }
+    ],
+    "access_right": "open",
+    "license": "AGPL-3.0",
+    "upload_type": "software"
+}
