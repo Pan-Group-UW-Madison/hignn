@@ -1,5 +1,5 @@
 ---
-title: '$\mathcal{H}$-HIGNN Toolkit: A Software for Efficient and Scalable Simulation of Large-Scale Particulate Suspensions Using GNNs and $\mathcal{H}$-Matrices'
+title: 'H-HIGNN Toolkit: A Software for Efficient and Scalable Simulation of Large-Scale Particulate Suspensions Using GNNs and H-Matrices'
 
 tags: 
   - Python/C++
